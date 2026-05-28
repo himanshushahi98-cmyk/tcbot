@@ -810,11 +810,13 @@ function drawChart() {
   var start=Math.max(0,candles.length-CVIS+shift);
   var vis=candles.slice(start,Math.min(candles.length,start+CVIS));
   if (!vis.length) return;
+  var lastIdx=vis.length-1;
   var hi=vis[0].high, lo=vis[0].low, i, c;
   for (i=1;i<vis.length;i++) { if(vis[i].high>hi)hi=vis[i].high; if(vis[i].low<lo)lo=vis[i].low; }
   var rng=hi-lo||1;
   function toY(p){return PT+((hi-p)/rng)*(H-PT-PB);}
-  function toX(i){return i*(CW+CGAP);}
+  // right-anchored: latest candle always sits at right edge of chart
+  function toX(i){return (W-PR-CW)-(lastIdx-i)*(CW+CGAP);}
   for (i=0;i<=4;i++) {
     var gy=PT+(i/4)*(H-PT-PB);
     ctx.strokeStyle="rgba(255,255,255,0.025)"; ctx.lineWidth=1;
@@ -833,20 +835,59 @@ function drawChart() {
     ctx.fillRect(0,Math.min(y9,y15),W-PR,Math.abs(y9-y15));
   }
   for (i=0;i<vis.length;i++) {
-    c=vis[i]; var x=toX(i), bull=c.close>=c.open, col=bull?"#00C47A":"#FF4040";
+    c=vis[i];
+    var x=toX(i);
+    if (x+CW<0||x>W-PR) continue;
+    // forming candle = last candle in full array, draw at reduced opacity
+    var forming=(start+i===candles.length-1);
+    var bull=c.close>=c.open, col=bull?"#00C47A":"#FF4040";
+    ctx.globalAlpha=forming?0.5:1.0;
     ctx.strokeStyle=col; ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(x+CW/2,toY(c.high));ctx.lineTo(x+CW/2,toY(c.low));ctx.stroke();
     var bT=toY(Math.max(c.open,c.close)), bB=toY(Math.min(c.open,c.close));
     ctx.fillStyle=col; ctx.fillRect(x,bT,CW,Math.max(1,bB-bT));
+    ctx.globalAlpha=1.0;
+    if (forming) {
+      ctx.fillStyle="#F0B90B";
+      ctx.beginPath(); ctx.arc(x+CW/2,toY(c.close),3,0,Math.PI*2); ctx.fill();
+    }
   }
-  if (SIG&&SIG.signal&&vis.length) {
-    var lc=vis[vis.length-1], lx=toX(vis.length-1)+CW/2;
+  // signal triangle anchored to last CLOSED candle (not the forming one)
+  if (SIG&&SIG.signal&&vis.length>=2) {
+    var lc=vis[lastIdx-1], lx=toX(lastIdx-1)+CW/2;
     ctx.fillStyle=SIG.signal==="BUY"?"#00C47A":"#FF4040";
     ctx.beginPath();
     if (SIG.signal==="BUY"){var sy=toY(lc.low)+13;ctx.moveTo(lx,sy-9);ctx.lineTo(lx-6,sy+3);ctx.lineTo(lx+6,sy+3);}
     else{var sy2=toY(lc.high)-13;ctx.moveTo(lx,sy2+9);ctx.lineTo(lx-6,sy2-3);ctx.lineTo(lx+6,sy2-3);}
     ctx.closePath(); ctx.fill();
   }
+  // SL / TP / entry lines for all open trades
+  if (ST.openTrades&&ST.openTrades.length) {
+    ST.openTrades.forEach(function(t){
+      if (t.entry&&t.entry>=lo&&t.entry<=hi) {
+        ctx.setLineDash([2,3]); ctx.strokeStyle="rgba(240,185,11,0.6)"; ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(0,toY(t.entry));ctx.lineTo(W-PR,toY(t.entry));ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle="#F0B90B"; ctx.font="bold 8px -apple-system"; ctx.textAlign="left";
+        ctx.fillText("E "+t.entry.toFixed(0),W-PR+4,toY(t.entry)+3);
+      }
+      if (t.sl&&t.sl>=lo&&t.sl<=hi) {
+        ctx.setLineDash([4,3]); ctx.strokeStyle="rgba(255,64,64,0.7)"; ctx.lineWidth=1.2;
+        ctx.beginPath();ctx.moveTo(0,toY(t.sl));ctx.lineTo(W-PR,toY(t.sl));ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle="#FF4040"; ctx.font="bold 8px -apple-system"; ctx.textAlign="left";
+        ctx.fillText("SL "+t.sl.toFixed(0),W-PR+4,toY(t.sl)+3);
+      }
+      if (t.tp&&t.tp>=lo&&t.tp<=hi) {
+        ctx.setLineDash([4,3]); ctx.strokeStyle="rgba(0,196,122,0.7)"; ctx.lineWidth=1.2;
+        ctx.beginPath();ctx.moveTo(0,toY(t.tp));ctx.lineTo(W-PR,toY(t.tp));ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle="#00C47A"; ctx.font="bold 8px -apple-system"; ctx.textAlign="left";
+        ctx.fillText("TP "+t.tp.toFixed(0),W-PR+4,toY(t.tp)+3);
+      }
+    });
+  }
+  ctx.setLineDash([]);
   if (price&&price>=lo&&price<=hi) {
     var py=toY(price);
     ctx.setLineDash([3,3]); ctx.strokeStyle="#F0B90B"; ctx.lineWidth=1;
@@ -857,11 +898,15 @@ function drawChart() {
     ctx.fillStyle="#000"; ctx.font="bold 9px -apple-system"; ctx.textAlign="center";
     ctx.fillText(price.toFixed(0),W-PR+(PR-4)/2+2,py+3);
   }
+  ctx.setLineDash([]);
   ctx.fillStyle="#162236"; ctx.font="8px -apple-system"; ctx.textAlign="center";
   for (i=0;i<vis.length;i++) {
     if (i%20===0&&vis[i].time) {
-      var d=new Date(vis[i].time);
-      ctx.fillText(pad(d.getUTCHours())+":"+pad(d.getUTCMinutes()),toX(i)+CW/2,H-6);
+      var tx=toX(i);
+      if (tx+CW/2>=0&&tx+CW/2<=W-PR) {
+        var d=new Date(vis[i].time);
+        ctx.fillText(pad(d.getUTCHours())+":"+pad(d.getUTCMinutes()),tx+CW/2,H-6);
+      }
     }
   }
 }
