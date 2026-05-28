@@ -121,6 +121,10 @@ button:disabled{opacity:.4;}
         <div id="dB" style="width:7px;height:7px;border-radius:50%;background:var(--b2);"></div>
       </div>
       <div id="hStat" style="font-size:9px;border:1px solid var(--b1);border-radius:6px;padding:3px 8px;color:var(--t4);font-weight:700;">OFFLINE</div>
+      <div style="text-align:right;">
+        <div id="liveClock" style="font-size:11px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;">--:--:--</div>
+        <div id="utcClock" style="font-size:9px;color:var(--t4);font-variant-numeric:tabular-nums;">UTC --:--</div>
+      </div>
     </div>
   </div>
 
@@ -596,14 +600,12 @@ function fetchTicker(cb) {
 }
 
 function claudeMsg(sys, msg, maxTok, cb) {
-  if (!KEY_C) { cb("No Claude API key"); return; }
-  fetch("https://api.anthropic.com/v1/messages",{
+  if (!KEY_C) { cb("No Claude API key — go to CONN tab"); return; }
+  fetch("/api/claude",{
     method:"POST",
     headers:{
       "content-type":"application/json",
-      "x-api-key":KEY_C,
-      "anthropic-version":"2023-06-01",
-      "anthropic-dangerous-request-source":"user-browser"
+      "x-api-key":KEY_C
     },
     body:JSON.stringify({
       model:"claude-sonnet-4-6",
@@ -616,7 +618,7 @@ function claudeMsg(sys, msg, maxTok, cb) {
     if (!r.ok) return r.json().then(function(b){cb((b.error&&b.error.message)||"HTTP "+r.status);});
     return r.json().then(function(d){cb(null,d.content&&d.content[0]?d.content[0].text:"");});
   })
-  .catch(function(e){cb(e.message);});
+  .catch(function(e){cb("Network error: "+e.message);});
 }
 
 // =============================================================
@@ -1214,6 +1216,23 @@ window.onload=function(){
   updateConnGrid();
   E("botBtn").onclick=toggleBot;
   setInterval(function(){renderKZBar();drawChart();},60000);
+
+  // Live clock — ticks every second
+  var clockEl = document.getElementById('liveClock');
+  var utcClockEl = document.getElementById('utcClock');
+  function tickClock(){
+    var d=new Date();
+    var h=pad(d.getHours()),m=pad(d.getMinutes()),s=pad(d.getSeconds());
+    var uh=pad(d.getUTCHours()),um=pad(d.getUTCMinutes());
+    if(clockEl) clockEl.textContent=h+":"+m+":"+s;
+    if(utcClockEl){
+      var sess=sessName();
+      utcClockEl.textContent="UTC "+uh+":"+um+(sess?" · "+sess:"");
+      utcClockEl.style.color=inKZ()?"#00C47A":"var(--t4)";
+    }
+  }
+  tickClock();
+  setInterval(tickClock,1000);
 
   // Auto-load data if key was saved
   if (KEY_C && !candles.length) {
