@@ -960,6 +960,7 @@ function scheduleNextTick() {
 function toggleBot() {
   if (!candles.length) { addLog("Load data first","error"); goTab("conn"); return; }
   botOn=!botOn;
+  localStorage.setItem("tcbot_autostart", botOn?"1":"0");
   var btn=E("botBtn"), dot=E("hDot");
   if (botOn) {
     btn.textContent="STOP BOT"; btn.className="br2";
@@ -1638,9 +1639,59 @@ window.onload=function(){
         loadTicker();
         if (tickTimer) clearInterval(tickTimer);
         tickTimer=setInterval(loadTicker,15000);
+        // Auto-resume bot if it was running before refresh/close
+        if (localStorage.getItem("tcbot_autostart")==="1" && !botOn) {
+          toggleBot();
+          addLog("Auto-resumed after reload","success");
+        }
       }
     });
   }
+
+  // Resume when screen/tab comes back to foreground
+  document.addEventListener("visibilitychange", function() {
+    if (document.hidden) return;
+    if (localStorage.getItem("tcbot_autostart")!=="1") return;
+    if (!navigator.onLine) { addLog("Foreground — offline, waiting for WiFi","info"); return; }
+    if (!candles.length) {
+      if (!KEY_C) return;
+      loadCandles(function(err){
+        if (!err) {
+          if (tickTimer) clearInterval(tickTimer);
+          tickTimer=setInterval(loadTicker,15000);
+          if (!botOn) { toggleBot(); addLog("Resumed on foreground","success"); }
+        }
+      });
+    } else if (!botOn) {
+      toggleBot();
+      addLog("Resumed on foreground","success");
+    }
+  });
+
+  // Resume when WiFi reconnects
+  window.addEventListener("online", function() {
+    addLog("Network online","info");
+    if (localStorage.getItem("tcbot_autostart")!=="1") return;
+    if (!candles.length) {
+      if (!KEY_C) return;
+      loadCandles(function(err){
+        if (!err) {
+          if (tickTimer) clearInterval(tickTimer);
+          tickTimer=setInterval(loadTicker,15000);
+          if (!botOn) { toggleBot(); addLog("WiFi back — bot resumed","success"); }
+        }
+      });
+    } else if (!botOn) {
+      toggleBot();
+      addLog("WiFi back — bot resumed","success");
+    }
+  });
+
+  // Pause (don't stop) when WiFi drops
+  window.addEventListener("offline", function() {
+    addLog("Network offline — bot paused until WiFi returns","info");
+    if (botOn) { botOn=false; clearTimeout(botTimer); }
+  });
 };
 </script>
 </body>
