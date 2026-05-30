@@ -924,6 +924,7 @@ function tick() {
         ST.inLong=true; ST.openTp=SIG.tpL; ST.openSl=SIG.slL; ST.openLot=lot;
         ST.openCount++; ST.total++; ST.lastSigBar=ST.barIdx; ST.kzCnt++;
         ST.openTrades.push({side:"LONG",entry:SIG.price,sl:SIG.slL,tp:SIG.tpL,qty:lot,time:ts()});
+        saveState();
         var estComm=commissionCost(lot,SIG.price,SIG.tpL);
         addLog("BUY $"+SIG.price.toFixed(0)+" SL $"+SIG.slL.toFixed(0)+" TP $"+SIG.tpL.toFixed(0)+" | "+lot+" BTC | Risk $"+C.MAX_RISK+" | est.fee~$"+estComm,"buy");
         playSound("entry"); doVibrate([60]);
@@ -933,6 +934,7 @@ function tick() {
         ST.inShort=true; ST.openTp=SIG.tpS; ST.openSl=SIG.slS; ST.openLot=lot2;
         ST.openCount++; ST.total++; ST.lastSigBar=ST.barIdx; ST.kzCnt++;
         ST.openTrades.push({side:"SHORT",entry:SIG.price,sl:SIG.slS,tp:SIG.tpS,qty:lot2,time:ts()});
+        saveState();
         var estComm2=commissionCost(lot2,SIG.price,SIG.tpS);
         addLog("SELL $"+SIG.price.toFixed(0)+" SL $"+SIG.slS.toFixed(0)+" TP $"+SIG.tpS.toFixed(0)+" | "+lot2+" BTC | Risk $"+C.MAX_RISK+" | est.fee~$"+estComm2,"sell");
         playSound("entry"); doVibrate([60]);
