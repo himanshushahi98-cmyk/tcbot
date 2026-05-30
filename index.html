@@ -96,6 +96,26 @@ button:disabled{opacity:.4;}
 .slidein{animation:slideup .2s ease;}
 
 .sh{font-size:11px;color:var(--t3);letter-spacing:.1em;font-weight:700;margin:4px 0 8px;text-transform:uppercase;}
+
+/* LIGHT MODE */
+body.light{--green:#009A60;--red:#E03030;--amber:#C89000;--blue:#1A4FE8;--orange:#E05010;--purple:#4A42E8;--bg0:#EEF2F8;--bg1:#FFFFFF;--bg2:#F4F7FB;--bg3:#E8EFF7;--b1:#CDD9E8;--b2:#B0C4D8;--b3:#88AACC;--t1:#1A2840;--t2:#3A5878;--t3:#7090B0;--t4:#99B0C8;background:#EEF2F8;color:#1A2840;}
+
+/* SETTINGS OVERLAY */
+#sOvl{position:fixed;inset:0;background:rgba(0,9,18,.65);z-index:200;display:none;align-items:flex-end;backdrop-filter:blur(3px);}
+#sOvl.on{display:flex;}
+#sPanel{background:var(--bg1);border:1px solid var(--b1);border-radius:20px 20px 0 0;width:100%;padding:0 0 calc(16px + var(--sab));animation:slideup .25s ease;}
+.sRow{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--bg2);}
+.sRow:last-child{border-bottom:none;}
+.sRowCol{flex-direction:column;align-items:stretch;gap:10px;}
+.sLbl{font-size:13px;font-weight:700;color:var(--t1);}
+.sSub{font-size:11px;color:var(--t4);margin-top:2px;}
+.tog{position:relative;width:44px;height:26px;flex-shrink:0;}
+.tog input{opacity:0;width:0;height:0;position:absolute;}
+.togS{position:absolute;inset:0;background:var(--b2);border-radius:13px;cursor:pointer;transition:background .2s;}
+.togS:before{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.35);}
+.tog input:checked+.togS{background:var(--green);}
+.tog input:checked+.togS:before{transform:translateX(18px);}
+input[type=range]{padding:0;border:none;background:transparent;border-radius:0;height:4px;-webkit-appearance:auto;accent-color:var(--blue);}
 </style>
 </head>
 <body>
@@ -125,6 +145,9 @@ button:disabled{opacity:.4;}
         <div id="liveClock" style="font-size:11px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;">--:--:--</div>
         <div id="utcClock" style="font-size:9px;color:var(--t4);font-variant-numeric:tabular-nums;">UTC --:--</div>
       </div>
+      <button onclick="openSettings()" style="background:none;border:1px solid var(--b1);border-radius:8px;color:var(--t3);cursor:pointer;padding:5px 6px;display:flex;align-items:center;flex-shrink:0;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
     </div>
   </div>
 
@@ -283,8 +306,20 @@ button:disabled{opacity:.4;}
           <div style="font-size:10px;color:var(--t4);letter-spacing:.08em;margin-bottom:6px;font-weight:700;">API SECRET</div>
           <input type="password" id="bsIn" placeholder="Bybit API secret..."/>
         </div>
-        <button id="cbBtn" class="ba" onclick="doConnBybit()">SAVE KEYS</button>
-        <div style="font-size:11px;color:var(--t4);margin-top:10px;line-height:1.6;">Signal-only mode. Live orders need server-side ccxt.</div>
+        <div style="margin-bottom:12px;">
+          <div style="font-size:10px;color:var(--t4);letter-spacing:.08em;margin-bottom:6px;font-weight:700;">POSITION MODE</div>
+          <div style="display:flex;gap:8px;">
+            <button id="pmOne" class="ba" style="flex:1;font-size:12px;padding:10px;" onclick="setPosMode('one-way')">One-Way</button>
+            <button id="pmHedge" class="bo" style="flex:1;font-size:12px;" onclick="setPosMode('hedge')">Hedge Mode</button>
+          </div>
+          <div style="font-size:10px;color:var(--t4);margin-top:5px;">Check Bybit → Derivatives → Positions → Mode</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button id="cbBtn" class="ba" style="flex:1;" onclick="doConnBybit()">SAVE KEYS</button>
+          <button id="cbTest" class="bo" style="flex:1;font-size:12px;" onclick="doTestBybit()">TEST CONNECTION</button>
+        </div>
+        <div id="cbTestMsg" style="font-size:12px;min-height:16px;line-height:1.6;"></div>
+        <div style="font-size:11px;color:var(--t4);margin-top:6px;line-height:1.6;">Live mode: market orders with TP/SL on Bybit BTCUSDT Perp. Fee 0.055% per side included in P&amp;L.</div>
       </div>
 
       <div class="sh">STATUS</div>
@@ -294,6 +329,43 @@ button:disabled{opacity:.4;}
     </div>
 
   </div><!-- end #pages -->
+
+  <!-- SETTINGS OVERLAY -->
+  <div id="sOvl" onclick="if(event.target===this)closeSettings()">
+    <div id="sPanel">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;">
+        <span style="font-size:16px;font-weight:900;letter-spacing:-.01em;">Settings</span>
+        <button onclick="closeSettings()" style="background:none;border:none;color:var(--t2);font-size:22px;cursor:pointer;padding:2px 8px;line-height:1;">&#10005;</button>
+      </div>
+      <div style="height:1px;background:var(--b1);"></div>
+      <div style="padding:4px 6px 0;">
+
+        <div style="font-size:9px;color:var(--t4);letter-spacing:.12em;font-weight:700;padding:10px 12px 4px;">APPEARANCE</div>
+        <div class="sRow">
+          <div><div class="sLbl">Dark Mode</div><div class="sSub">Switch between dark &amp; light theme</div></div>
+          <label class="tog"><input type="checkbox" id="setDark" onchange="onThemeToggle(this)" checked><span class="togS"></span></label>
+        </div>
+
+        <div style="font-size:9px;color:var(--t4);letter-spacing:.12em;font-weight:700;padding:10px 12px 4px;">NOTIFICATIONS</div>
+        <div class="sRow">
+          <div><div class="sLbl">Sound Alerts</div><div class="sSub">Play tone on signals &amp; exits</div></div>
+          <label class="tog"><input type="checkbox" id="setSound" onchange="onSoundToggle(this)" checked><span class="togS"></span></label>
+        </div>
+        <div class="sRow sRowCol">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div class="sLbl">Volume</div>
+            <span id="setVolLabel" style="font-size:12px;font-weight:800;color:var(--blue);">70%</span>
+          </div>
+          <input type="range" id="setVol" min="0" max="100" value="70" style="width:100%;" oninput="onVolChange(this)">
+        </div>
+        <div class="sRow">
+          <div><div class="sLbl">Vibration</div><div class="sSub">Haptic feedback on mobile</div></div>
+          <label class="tog"><input type="checkbox" id="setVib" onchange="onVibToggle(this)" checked><span class="togS"></span></label>
+        </div>
+
+      </div>
+    </div>
+  </div>
 
   <!-- BOTTOM TAB BAR -->
   <div id="tabbar">
@@ -335,8 +407,9 @@ var C = {
   ATR_LEN:14, MAX_BODY:0.70, MIN_BODY:0.15,
   SL_BUF:0.10, RR:2.0,
   COOLDOWN:5, MAX_SESS:4, MAX_OPEN:2,
-  MAX_RISK:2.0,
-  LON_S:7, LON_E:10, NY_S:13, NY_E:16
+  MAX_RISK:2.0, MAX_DAY_LOSS:8.0,
+  LON_S:7, LON_E:10, NY_S:13, NY_E:16,
+  COMMISSION_RATE:0.00055  // Bybit taker 0.055% per side
 };
 
 // =============================================================
@@ -344,6 +417,7 @@ var C = {
 // =============================================================
 var KEY_C = "", KEY_BK = "", KEY_BS = "";
 var connClaude = false, connBybit = false;
+var BYBIT_POS_MODE = "one-way"; // "one-way" or "hedge"
 
 function freshState() {
   return {
@@ -367,6 +441,92 @@ var CW = 6, CGAP = 2, CVIS = 80;
 var chartOff = 0, chartDrag = false, chartDragX = null;
 
 // =============================================================
+//  SETTINGS
+// =============================================================
+var SETTINGS = { theme:"dark", soundOn:true, volume:0.7, vibrate:true };
+
+function loadSettings() {
+  try {
+    var s = localStorage.getItem("tcbot_settings");
+    if (s) SETTINGS = Object.assign({theme:"dark",soundOn:true,volume:0.7,vibrate:true}, JSON.parse(s));
+    applyTheme(SETTINGS.theme);
+    var dk=E("setDark"); if(dk) dk.checked = SETTINGS.theme==="dark";
+    var sn=E("setSound"); if(sn) sn.checked = SETTINGS.soundOn;
+    var sv=E("setVib"); if(sv) sv.checked = SETTINGS.vibrate;
+    var vol=E("setVol"); var vlbl=E("setVolLabel");
+    if(vol){ vol.value=Math.round(SETTINGS.volume*100); }
+    if(vlbl){ vlbl.textContent=Math.round(SETTINGS.volume*100)+"%"; }
+  } catch(e){}
+}
+
+function saveSettings() {
+  try{ localStorage.setItem("tcbot_settings",JSON.stringify(SETTINGS)); }catch(e){}
+}
+
+function applyTheme(t) {
+  document.body.classList.toggle("light", t==="light");
+}
+
+function openSettings() { E("sOvl").classList.add("on"); }
+function closeSettings(){ E("sOvl").classList.remove("on"); }
+
+function onThemeToggle(el) {
+  SETTINGS.theme = el.checked ? "dark" : "light";
+  applyTheme(SETTINGS.theme); saveSettings();
+}
+function onSoundToggle(el) { SETTINGS.soundOn=el.checked; saveSettings(); }
+function onVolChange(el) {
+  SETTINGS.volume=el.value/100;
+  E("setVolLabel").textContent=el.value+"%";
+  saveSettings();
+  playSound("entry");
+}
+function onVibToggle(el) {
+  SETTINGS.vibrate=el.checked; saveSettings();
+  if(el.checked) doVibrate([60]);
+}
+
+var _audioCtx=null;
+function getAudioCtx(){
+  if(!_audioCtx) _audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  return _audioCtx;
+}
+
+function playSound(type){
+  if(!SETTINGS.soundOn) return;
+  try{
+    var ctx=getAudioCtx();
+    if(ctx.state==="suspended") ctx.resume();
+    var osc=ctx.createOscillator();
+    var gain=ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    var now=ctx.currentTime, vol=Math.max(0.001,SETTINGS.volume)*0.4;
+    osc.type="sine";
+    gain.gain.setValueAtTime(vol, now);
+    if(type==="entry"){
+      osc.frequency.setValueAtTime(880, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now+0.18);
+      osc.start(now); osc.stop(now+0.18);
+    } else if(type==="win"){
+      osc.frequency.setValueAtTime(523, now);
+      osc.frequency.exponentialRampToValueAtTime(1047, now+0.28);
+      gain.gain.exponentialRampToValueAtTime(0.001, now+0.45);
+      osc.start(now); osc.stop(now+0.45);
+    } else if(type==="loss"){
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(200, now+0.35);
+      gain.gain.exponentialRampToValueAtTime(0.001, now+0.45);
+      osc.start(now); osc.stop(now+0.45);
+    }
+  }catch(e){}
+}
+
+function doVibrate(pattern){
+  if(!SETTINGS.vibrate||!navigator.vibrate) return;
+  try{ navigator.vibrate(pattern); }catch(e){}
+}
+
+// =============================================================
 //  PERSIST — save/load from localStorage
 // =============================================================
 function saveState() {
@@ -375,6 +535,11 @@ function saveState() {
     localStorage.setItem("tcbot_stats", JSON.stringify({
       wins:ST.wins, losses:ST.losses, pnl:ST.pnl,
       total:ST.total, dayLoss:ST.dayLoss, lastDay:ST.lastDay
+    }));
+    localStorage.setItem("tcbot_open", JSON.stringify({
+      inLong:ST.inLong, inShort:ST.inShort,
+      openTp:ST.openTp, openSl:ST.openSl, openLot:ST.openLot,
+      openCount:ST.openCount, openTrades:ST.openTrades
     }));
   } catch(e) {}
 }
@@ -396,6 +561,14 @@ function loadState() {
     if (k) { KEY_C=k; E("ckIn").value=k; connClaude=true; setDot("ccDot","ok"); setDot("dC","ok"); }
     if (bk) { KEY_BK=bk; E("bkIn").value=bk; }
     if (bs) { KEY_BS=bs; E("bsIn").value=bs; connBybit=!!(bk&&bs); if(connBybit){setDot("cbDot","ok");setDot("dB","ok");} }
+    var pm=localStorage.getItem("tcbot_bybit_posmode"); if(pm){ BYBIT_POS_MODE=pm; applyPosModeUI(pm); }
+    var op=localStorage.getItem("tcbot_open");
+    if (op) {
+      var opt=JSON.parse(op);
+      ST.inLong=opt.inLong||false; ST.inShort=opt.inShort||false;
+      ST.openTp=opt.openTp||0; ST.openSl=opt.openSl||0; ST.openLot=opt.openLot||0;
+      ST.openCount=opt.openCount||0; ST.openTrades=opt.openTrades||[];
+    }
   } catch(e) {}
 }
 
@@ -430,7 +603,8 @@ function calcATR(cs, p) {
 }
 
 function calcADX(cs, p) {
-  if (cs.length < p+1) return 0;
+  // Need enough bars for 2 full RMA warm-ups (DI pass + ADX smoothing pass)
+  if (cs.length < 2*p+2) return 0;
   var ups=[], dns=[], trs=[], i, c, pr;
   for (i=1; i<cs.length; i++) {
     c=cs[i]; pr=cs[i-1];
@@ -439,31 +613,95 @@ function calcADX(cs, p) {
     dns.push(dn>up&&dn>0?dn:0);
     trs.push(Math.max(c.high-c.low, Math.abs(c.high-pr.close), Math.abs(c.low-pr.close)));
   }
+  // First RMA pass: smooth TR, +DM, -DM with Wilder's alpha=1/p
   var al=1/p, at=0, pd=0, md=0;
   for (i=0; i<p; i++) { at+=trs[i]; pd+=ups[i]; md+=dns[i]; }
   at/=p; pd/=p; md/=p;
+  // Collect DX series
+  var dxArr=[];
   for (i=p; i<trs.length; i++) {
     at=trs[i]*al+at*(1-al);
     pd=ups[i]*al+pd*(1-al);
     md=dns[i]*al+md*(1-al);
+    var pdi=100*pd/(at||0.0001), mdi=100*md/(at||0.0001);
+    dxArr.push(100*Math.abs(pdi-mdi)/((pdi+mdi)||0.0001));
   }
-  var pdi=100*pd/(at||0.0001), mdi=100*md/(at||0.0001);
-  return 100*Math.abs(pdi-mdi)/((pdi+mdi)||0.0001);
+  // Second RMA pass on DX → ADX (this is what TradingView ta.adx() does)
+  if (dxArr.length < p) return dxArr[dxArr.length-1]||0;
+  var adx=0;
+  for (i=0; i<p; i++) adx+=dxArr[i];
+  adx/=p;
+  for (i=p; i<dxArr.length; i++) adx=dxArr[i]*al+adx*(1-al);
+  return adx;
 }
 
 // =============================================================
-//  LOT SIZING — risk $2 max per trade (dynamic)
+//  LOT SIZING — total risk (price move + round-trip fee) = MAX_RISK
 // =============================================================
 function lotSize(entry, sl) {
   var dist = Math.abs(entry-sl);
   if (!dist || dist<0.01) return 0;
-  return parseFloat((C.MAX_RISK/dist).toFixed(6));
+  // Old formula: qty = MAX_RISK / dist  → only covers price move, fee is extra
+  // Fixed:       total loss = qty*dist + qty*(entry+sl)*rate = MAX_RISK
+  //              → qty = MAX_RISK / (dist + (entry+sl)*rate)
+  var totalCost = dist + (entry + Math.abs(sl)) * C.COMMISSION_RATE;
+  // Round to Bybit step size (0.001 BTC) so sim qty matches live qty exactly
+  var raw = C.MAX_RISK / totalCost;
+  return parseFloat(Math.max(0.001, Math.round(raw/0.001)*0.001).toFixed(3));
 }
 
 function tradePnl(qty, entry, exit, side) {
-  if (side==="LONG")  return parseFloat((qty*(exit-entry)).toFixed(2));
-  if (side==="SHORT") return parseFloat((qty*(entry-exit)).toFixed(2));
-  return 0;
+  var gross = 0;
+  if (side==="LONG")  gross = qty*(exit-entry);
+  if (side==="SHORT") gross = qty*(entry-exit);
+  // Deduct taker fee for both entry and exit legs
+  var commission = qty * (entry + exit) * C.COMMISSION_RATE;
+  return parseFloat((gross - commission).toFixed(2));
+}
+
+function commissionCost(qty, entry, exit) {
+  return parseFloat((qty * (entry + exit) * C.COMMISSION_RATE).toFixed(2));
+}
+
+// =============================================================
+//  BYBIT LIVE ORDER
+// =============================================================
+function placeBybitOrder(side, qty, sl, tp) {
+  if (!connBybit || !KEY_BK || !KEY_BS) {
+    addLog("Bybit SIM (no keys) — "+side+" skipped", "info");
+    return;
+  }
+  // lotSize() already returns Bybit-stepped qty (0.001 BTC precision)
+  var safeQty = qty;
+  var safeSl = parseFloat(sl.toFixed(1));
+  var safeTp = parseFloat(tp.toFixed(1));
+  addLog("Bybit placing "+side+" | qty:"+safeQty+" SL:"+safeSl+" TP:"+safeTp+" ["+BYBIT_POS_MODE+"]","info");
+  fetch("/api/bybit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      apiKey: KEY_BK,
+      apiSecret: KEY_BS,
+      symbol: "BTCUSDT",
+      side: side,
+      qty: safeQty.toString(),
+      sl: safeSl.toString(),
+      tp: safeTp.toString(),
+      posMode: BYBIT_POS_MODE
+    })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if (d.retCode === 0) {
+      var oid = d.result && d.result.orderId ? d.result.orderId.slice(-8) : "ok";
+      addLog("BYBIT OK "+side+" | id:..."+oid, "success");
+    } else {
+      addLog("BYBIT FAIL code:"+d.retCode+" — "+d.retMsg, "error");
+    }
+  })
+  .catch(function(e){
+    addLog("BYBIT net error: "+e.message, "error");
+  });
 }
 
 // =============================================================
@@ -499,14 +737,18 @@ function evalSignal(cs) {
   var body=Math.abs(last.close-last.open), mid=(last.high+last.low)/2;
   var zTop=Math.max(e9,e15), zBot=Math.min(e9,e15);
   var bull=e9>e15, bear=e9<e15;
-  var inZone=last.low<=zTop&&last.high>=zBot;
+  // Body (not just wick) must overlap the EMA ribbon — matches TradingView behaviour
+  var bLow=Math.min(last.open,last.close), bHigh=Math.max(last.open,last.close);
+  var inZone=bLow<=zTop&&bHigh>=zBot;
   var goodSz=body>C.MIN_BODY*atrV&&body<C.MAX_BODY*atrV;
-  var longC=last.close>last.open&&goodSz&&last.close>mid&&last.close>zBot;
-  var shortC=last.close<last.open&&goodSz&&last.close<mid&&last.close<zTop;
+  // Close must be back above zBot (long) or below zTop (short) — shows zone rejection
+  var longC=last.close>last.open&&goodSz&&last.close>mid&&last.close>=zBot;
+  var shortC=last.close<last.open&&goodSz&&last.close<mid&&last.close<=zTop;
   var adxOk=adxV>=C.ADX_MIN, kzOk=inKZ();
   var cd=ST.barIdx-ST.lastSigBar, cdOk=cd>=C.COOLDOWN;
   var sessOk=ST.kzCnt<C.MAX_SESS, slotOk=ST.openCount<C.MAX_OPEN;
-  var allOk=adxOk&&kzOk&&cdOk&&sessOk&&slotOk;
+  var dayOk=ST.dayLoss<C.MAX_DAY_LOSS;
+  var allOk=adxOk&&kzOk&&cdOk&&sessOk&&slotOk&&dayOk;
   var canBuy=bull&&inZone&&longC&&allOk&&!ST.inLong&&!ST.inShort;
   var canSell=bear&&inZone&&shortC&&allOk&&!ST.inLong&&!ST.inShort;
   var slL=last.low-C.SL_BUF*atrV,  tpL=last.close+(last.close-slL)*C.RR;
@@ -525,7 +767,8 @@ function evalSignal(cs) {
       "Kill zone":    {ok:kzOk,          v:sessName()||"Off-session"},
       "Cooldown":     {ok:cdOk,          v:Math.min(cd,C.COOLDOWN)+"/"+C.COOLDOWN},
       "Session max":  {ok:sessOk,        v:ST.kzCnt+"/"+C.MAX_SESS},
-      "Open slots":   {ok:slotOk,        v:ST.openCount+"/"+C.MAX_OPEN}
+      "Open slots":   {ok:slotOk,        v:ST.openCount+"/"+C.MAX_OPEN},
+      "Day loss":     {ok:dayOk,         v:"$"+ST.dayLoss.toFixed(2)+"/$"+C.MAX_DAY_LOSS}
     }
   };
 }
@@ -535,7 +778,8 @@ function evalSignal(cs) {
 // =============================================================
 function checkExits(hi, lo) {
   if (ST.inLong) {
-    var ent=ST.openTrades.length?ST.openTrades[0].entry:ST.openTp;
+    var lt=ST.openTrades.find(function(t){return t.side==="LONG";});
+    var ent=lt?lt.entry:0;
     if (hi>=ST.openTp) {
       var p=tradePnl(ST.openLot,ent,ST.openTp,"LONG");
       ST.wins++; ST.pnl=parseFloat((ST.pnl+p).toFixed(2));
@@ -544,6 +788,7 @@ function checkExits(hi, lo) {
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="LONG";});
       ST.openLot=0; saveState();
       addLog("LONG TP  +$"+Math.abs(p).toFixed(2)+"  Total:$"+ST.pnl.toFixed(2),"win");
+      playSound("win"); doVibrate([100,50,100]);
     } else if (lo<=ST.openSl) {
       var p2=tradePnl(ST.openLot,ent,ST.openSl,"LONG");
       ST.losses++; ST.pnl=parseFloat((ST.pnl+p2).toFixed(2));
@@ -553,10 +798,12 @@ function checkExits(hi, lo) {
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="LONG";});
       ST.openLot=0; saveState();
       addLog("LONG SL  -$"+Math.abs(p2).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2),"loss");
+      playSound("loss"); doVibrate([300]);
     }
   }
   if (ST.inShort) {
-    var ent2=ST.openTrades.length?ST.openTrades[0].entry:ST.openTp;
+    var st2=ST.openTrades.find(function(t){return t.side==="SHORT";});
+    var ent2=st2?st2.entry:0;
     if (lo<=ST.openTp) {
       var p3=tradePnl(ST.openLot,ent2,ST.openTp,"SHORT");
       ST.wins++; ST.pnl=parseFloat((ST.pnl+p3).toFixed(2));
@@ -565,6 +812,7 @@ function checkExits(hi, lo) {
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="SHORT";});
       ST.openLot=0; saveState();
       addLog("SHORT TP  +$"+Math.abs(p3).toFixed(2)+"  Total:$"+ST.pnl.toFixed(2),"win");
+      playSound("win"); doVibrate([100,50,100]);
     } else if (hi>=ST.openSl) {
       var p4=tradePnl(ST.openLot,ent2,ST.openSl,"SHORT");
       ST.losses++; ST.pnl=parseFloat((ST.pnl+p4).toFixed(2));
@@ -574,18 +822,22 @@ function checkExits(hi, lo) {
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="SHORT";});
       ST.openLot=0; saveState();
       addLog("SHORT SL  -$"+Math.abs(p4).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2),"loss");
+      playSound("loss"); doVibrate([300]);
     }
   }
 }
 
 // =============================================================
-//  FETCH — direct Binance (no proxy needed, CORS allowed)
+//  FETCH — Bybit public API (same exchange as live orders)
 // =============================================================
 function fetchCandles(limit, cb) {
-  fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit="+(limit||200))
+  fetch("https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=1&limit="+(limit||500))
     .then(function(r){return r.json();})
     .then(function(d){
-      cb(null, d.map(function(x){
+      if (d.retCode!==0) { cb(d.retMsg||"Bybit kline error"); return; }
+      // Bybit returns newest-first — reverse to oldest-first
+      var list = d.result.list.slice().reverse();
+      cb(null, list.map(function(x){
         return {time:+x[0],open:+x[1],high:+x[2],low:+x[3],close:+x[4],volume:+x[5]};
       }));
     })
@@ -593,9 +845,14 @@ function fetchCandles(limit, cb) {
 }
 
 function fetchTicker(cb) {
-  fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT")
+  fetch("https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT")
     .then(function(r){return r.json();})
-    .then(function(d){cb(null,d);})
+    .then(function(d){
+      if (d.retCode!==0||!d.result.list.length) { cb("ticker error"); return; }
+      var t=d.result.list[0];
+      // price24hPcnt is a decimal e.g. "0.0123" → multiply by 100 to get %
+      cb(null, {lastPrice:t.lastPrice, priceChangePercent:(parseFloat(t.price24hPcnt)*100).toFixed(2)});
+    })
     .catch(function(e){cb(e.message);});
 }
 
@@ -654,7 +911,7 @@ function doRefresh() { loadCandles(null); loadTicker(); }
 function tick() {
   if (!botOn) return;
   dailyReset(); sessReset();
-  fetchCandles(100, function(err, data) {
+  fetchCandles(200, function(err, data) {
     if (err) { addLog("Tick error: "+err,"error"); return; }
     candles=data;
     var closed=candles.slice(0,-1), last=closed[closed.length-1];
@@ -667,19 +924,37 @@ function tick() {
         ST.inLong=true; ST.openTp=SIG.tpL; ST.openSl=SIG.slL; ST.openLot=lot;
         ST.openCount++; ST.total++; ST.lastSigBar=ST.barIdx; ST.kzCnt++;
         ST.openTrades.push({side:"LONG",entry:SIG.price,sl:SIG.slL,tp:SIG.tpL,qty:lot,time:ts()});
-        addLog("BUY $"+SIG.price.toFixed(0)+" SL $"+SIG.slL.toFixed(0)+" TP $"+SIG.tpL.toFixed(0)+" | "+lot+" BTC | Risk $"+C.MAX_RISK,"buy");
+        var estComm=commissionCost(lot,SIG.price,SIG.tpL);
+        addLog("BUY $"+SIG.price.toFixed(0)+" SL $"+SIG.slL.toFixed(0)+" TP $"+SIG.tpL.toFixed(0)+" | "+lot+" BTC | Risk $"+C.MAX_RISK+" | est.fee~$"+estComm,"buy");
+        playSound("entry"); doVibrate([60]);
+        placeBybitOrder("BUY", lot, SIG.slL, SIG.tpL);
       } else if (SIG.signal==="SELL"&&!ST.inLong&&!ST.inShort) {
         var lot2=SIG.lotS;
         ST.inShort=true; ST.openTp=SIG.tpS; ST.openSl=SIG.slS; ST.openLot=lot2;
         ST.openCount++; ST.total++; ST.lastSigBar=ST.barIdx; ST.kzCnt++;
         ST.openTrades.push({side:"SHORT",entry:SIG.price,sl:SIG.slS,tp:SIG.tpS,qty:lot2,time:ts()});
-        addLog("SELL $"+SIG.price.toFixed(0)+" SL $"+SIG.slS.toFixed(0)+" TP $"+SIG.tpS.toFixed(0)+" | "+lot2+" BTC | Risk $"+C.MAX_RISK,"sell");
+        var estComm2=commissionCost(lot2,SIG.price,SIG.tpS);
+        addLog("SELL $"+SIG.price.toFixed(0)+" SL $"+SIG.slS.toFixed(0)+" TP $"+SIG.tpS.toFixed(0)+" | "+lot2+" BTC | Risk $"+C.MAX_RISK+" | est.fee~$"+estComm2,"sell");
+        playSound("entry"); doVibrate([60]);
+        placeBybitOrder("SELL", lot2, SIG.slS, SIG.tpS);
       }
     }
     var tot=ST.wins+ST.losses, wr=tot>0?((ST.wins/tot)*100).toFixed(1):"0.0";
     addLog("Bar "+ST.barIdx+" W:"+ST.wins+" L:"+ST.losses+" WR:"+wr+"% PnL:$"+ST.pnl.toFixed(2),"info");
     drawChart(); renderAll();
   });
+}
+
+function scheduleNextTick() {
+  if (!botOn) return;
+  // Fire 2 seconds after the next bar close (:02 into each minute)
+  // so the closed candle is fully available in Bybit's API
+  var now = Date.now();
+  var msToClose = 60000 - (now % 60000) + 2000;
+  botTimer = setTimeout(function() {
+    tick();
+    scheduleNextTick();
+  }, msToClose);
 }
 
 function toggleBot() {
@@ -689,13 +964,14 @@ function toggleBot() {
   if (botOn) {
     btn.textContent="STOP BOT"; btn.className="br2";
     dot.style.background="var(--green)"; dot.style.boxShadow="0 0 8px var(--green)";
-    addLog("Bot STARTED","success");
-    tick(); botTimer=setInterval(tick,60000);
+    var secs = Math.round((60000-(Date.now()%60000)+2000)/1000);
+    addLog("Bot STARTED — first tick at next bar close (~"+secs+"s)","success");
+    scheduleNextTick();
   } else {
     btn.textContent="▶  START BOT"; btn.className="bg";
     dot.style.background="var(--b2)"; dot.style.boxShadow="none";
     addLog("Bot STOPPED","info");
-    clearInterval(botTimer);
+    clearTimeout(botTimer); clearInterval(botTimer);
   }
 }
 
@@ -733,16 +1009,72 @@ function doConnClaude() {
   });
 }
 
+function applyPosModeUI(mode) {
+  var o=E("pmOne"), h=E("pmHedge"); if(!o||!h) return;
+  if (mode==="one-way") {
+    o.className="ba"; o.style.cssText="flex:1;font-size:12px;padding:10px;";
+    h.className="bo"; h.style.cssText="flex:1;font-size:12px;";
+  } else {
+    o.className="bo"; o.style.cssText="flex:1;font-size:12px;";
+    h.className="ba"; h.style.cssText="flex:1;font-size:12px;padding:10px;";
+  }
+}
+
+function setPosMode(mode) {
+  BYBIT_POS_MODE=mode;
+  try { localStorage.setItem("tcbot_bybit_posmode", mode); } catch(e) {}
+  applyPosModeUI(mode);
+  addLog("Position mode: "+mode,"info");
+}
+
 function doConnBybit() {
   var k=E("bkIn").value.trim(), s=E("bsIn").value.trim();
   if (!k||!s) { addLog("Enter both Bybit key and secret","error"); return; }
   KEY_BK=k; KEY_BS=s; connBybit=true;
-  try { localStorage.setItem("tcbot_bybit_key", k); localStorage.setItem("tcbot_bybit_secret", s); } catch(e){}
+  try {
+    localStorage.setItem("tcbot_bybit_key", k);
+    localStorage.setItem("tcbot_bybit_secret", s);
+    localStorage.setItem("tcbot_bybit_posmode", BYBIT_POS_MODE);
+  } catch(e){}
   setDot("cbDot","ok"); setDot("dB","ok");
   setBadge("cbBadge","SAVED","#00C47A");
   E("cbBtn").textContent="UPDATE";
-  addLog("Bybit keys saved","success");
+  addLog("Bybit keys saved | mode: "+BYBIT_POS_MODE,"success");
   updateConnGrid();
+}
+
+function doTestBybit() {
+  if (!KEY_BK || !KEY_BS) { setConnMsg("cbTestMsg","error","Save keys first"); return; }
+  var btn=E("cbTest"); btn.disabled=true; btn.textContent="TESTING...";
+  setConnMsg("cbTestMsg","info","Pinging Bybit mainnet...");
+  fetch("/api/bybit-test", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({apiKey:KEY_BK, apiSecret:KEY_BS})
+  })
+  .then(function(r){return r.json();})
+  .then(function(d){
+    btn.disabled=false; btn.textContent="TEST CONNECTION";
+    if (d.ok) {
+      // Pull USDT balance from response
+      var bal="?", list=d.data&&d.data.result&&d.data.result.list;
+      if (list&&list.length) {
+        var coins=list[0].coin||[];
+        var usdt=coins.find(function(c){return c.coin==="USDT";});
+        if (usdt) bal="$"+parseFloat(usdt.availableToWithdraw||usdt.walletBalance||0).toFixed(2);
+      }
+      setConnMsg("cbTestMsg","success","✓ Connected — Available: "+bal);
+      addLog("Bybit mainnet OK | balance: "+bal,"success");
+    } else {
+      var msg=(d.hint||d.msg||"Unknown error")+" (code:"+d.code+")";
+      setConnMsg("cbTestMsg","error","✗ "+msg);
+      addLog("Bybit test FAIL: "+msg,"error");
+    }
+  })
+  .catch(function(e){
+    btn.disabled=false; btn.textContent="TEST CONNECTION";
+    setConnMsg("cbTestMsg","error","Network error: "+e.message);
+  });
 }
 
 // =============================================================
@@ -1016,11 +1348,11 @@ function renderHeader(){
 
 function renderDash(){
   var tot=ST.wins+ST.losses, wr=tot>0?((ST.wins/tot)*100).toFixed(1):"0.0";
-  setTv("dPnl","$"+ST.pnl.toFixed(2),ST.pnl>=0?"#00C47A":"#FF4040");
+  setTv("dPnl",(ST.pnl>=0?"+$":"-$")+Math.abs(ST.pnl).toFixed(2),ST.pnl>=0?"#00C47A":"#FF4040");
   setTv("dWr",wr+"%",parseFloat(wr)>=50?"#00C47A":"#FF4040");
   setTv("dWins",ST.wins,"#00C47A");
   setTv("dLoss",ST.losses,"#FF4040");
-  setTv("dDL","$"+ST.dayLoss.toFixed(2),ST.dayLoss>0?"#F0B90B":"var(--t4)");
+  setTv("dDL",ST.dayLoss>0?"-$"+ST.dayLoss.toFixed(2):"$0",ST.dayLoss>0?"#FF4040":"var(--t4)");
   setTv("dOpen",ST.openCount+"/"+C.MAX_OPEN,"var(--t1)");
 
   var sc=E("sigCard");
@@ -1039,12 +1371,18 @@ function renderDash(){
       '<div style="background:var(--bg1);border-radius:8px;padding:8px;"><div style="font-size:9px;color:var(--t4);margin-bottom:3px;">TAKE PROFIT</div><div style="color:#00C47A;font-weight:800;">$'+tp.toFixed(0)+'</div></div>'+
       '<div style="background:var(--bg1);border-radius:8px;padding:8px;"><div style="font-size:9px;color:var(--t4);margin-bottom:3px;">LOT SIZE</div><div style="color:#F0B90B;font-weight:800;">'+lot+' BTC</div></div>'+
       '</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">'+
-      '<div style="color:var(--t4);">SL dist: <span style="color:var(--t1);font-weight:700;">$'+dist.toFixed(0)+'</span></div>'+
-      '<div style="color:var(--t4);">Max loss: <span style="color:#FF4040;font-weight:700;">$'+(lot*dist).toFixed(2)+'</span></div>'+
-      '<div style="color:var(--t4);">Max gain: <span style="color:#00C47A;font-weight:700;">$'+(lot*dist*C.RR).toFixed(2)+'</span></div>'+
-      '<div style="color:var(--t4);">ADX: <span style="color:var(--t1);font-weight:700;">'+SIG.adxV.toFixed(1)+'</span></div>'+
-      '</div>';
+      (function(){
+        var netLoss=Math.abs(tradePnl(lot,SIG.price,sl,isBuy?"LONG":"SHORT"));
+        var netGain=tradePnl(lot,SIG.price,tp,isBuy?"LONG":"SHORT");
+        var fee=commissionCost(lot,SIG.price,sl);
+        return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">'+
+        '<div style="color:var(--t4);">SL dist: <span style="color:var(--t1);font-weight:700;">$'+dist.toFixed(0)+'</span></div>'+
+        '<div style="color:var(--t4);">Fee (2 legs): <span style="color:#F97316;font-weight:700;">~$'+fee+'</span></div>'+
+        '<div style="color:var(--t4);">Net loss: <span style="color:#FF4040;font-weight:700;">-$'+netLoss.toFixed(2)+'</span></div>'+
+        '<div style="color:var(--t4);">Net gain: <span style="color:#00C47A;font-weight:700;">+$'+netGain.toFixed(2)+'</span></div>'+
+        '<div style="color:var(--t4);">ADX: <span style="color:var(--t1);font-weight:700;">'+SIG.adxV.toFixed(1)+'</span></div>'+
+        '</div>';
+      })();
   } else { sc.style.display="none"; }
 
   var op=E("openPos");
@@ -1064,11 +1402,22 @@ function renderDash(){
         '<div><div style="font-size:9px;color:var(--t4);">TARGET</div><div style="color:#00C47A;font-weight:800;">$'+t.tp.toFixed(0)+'</div></div>'+
         '</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:11px;">'+
-        '<div><div style="font-size:9px;color:var(--t4);">QTY</div><div style="color:#F0B90B;font-weight:800;">'+t.qty+' BTC</div></div>'+
-        '<div><div style="font-size:9px;color:var(--t4);">MAX LOSS</div><div style="color:#FF4040;font-weight:700;">$'+(t.qty*dist).toFixed(2)+'</div></div>'+
-        '<div><div style="font-size:9px;color:var(--t4);">MAX GAIN</div><div style="color:#00C47A;font-weight:700;">$'+(t.qty*dist*C.RR).toFixed(2)+'</div></div>'+
+        (function(){
+          var netLoss=Math.abs(tradePnl(t.qty,t.entry,t.sl,t.side));
+          var netGain=tradePnl(t.qty,t.entry,t.tp,t.side);
+          return '<div><div style="font-size:9px;color:var(--t4);">QTY</div><div style="color:#F0B90B;font-weight:800;">'+t.qty+' BTC</div></div>'+
+          '<div><div style="font-size:9px;color:var(--t4);">NET LOSS</div><div style="color:#FF4040;font-weight:700;">-$'+netLoss.toFixed(2)+'</div></div>'+
+          '<div><div style="font-size:9px;color:var(--t4);">NET GAIN</div><div style="color:#00C47A;font-weight:700;">+$'+netGain.toFixed(2)+'</div></div>';
+        })()+
         '</div>'+
-        (price?'<div style="margin-top:7px;font-size:11px;color:var(--t4);">Live: <span style="color:#F0B90B;font-weight:700;">$'+price.toFixed(0)+'</span></div>':'')+
+        (price?(function(){
+          var upnl=tradePnl(t.qty,t.entry,price,t.side);
+          var upnlCol=upnl>=0?"#00C47A":"#FF4040";
+          return '<div style="margin-top:7px;display:flex;justify-content:space-between;font-size:11px;">'+
+            '<span style="color:var(--t4);">Live: <span style="color:#F0B90B;font-weight:700;">$'+price.toFixed(0)+'</span></span>'+
+            '<span>UPnL: <span style="color:'+upnlCol+';font-weight:800;">'+(upnl>=0?"+$":"-$")+Math.abs(upnl).toFixed(2)+'</span></span>'+
+            '</div>';
+        })():'')+
         '</div>';
     }).join("");
   }
@@ -1113,7 +1462,9 @@ function renderStratTab(){
     dr("Formula","Qty = $2 / |entry - SL|","#F0B90B")+
     dr("SL $150 away","Qty=0.01333 BTC → loss=$2")+
     dr("SL $80 away","Qty=0.02500 BTC → loss=$2")+
-    dr("At TP (2R)","Gain=$4 regardless of SL");
+    dr("At TP (2R)","Gain=$4 regardless of SL")+
+    dr("Commission","0.055% taker × 2 legs (entry+exit)","#F97316")+
+    dr("Net TP gain","$4 minus fees (auto-deducted)","#F97316");
 
   E("spKZ").innerHTML=
     dr("London","07:00 – 10:00 UTC")+
@@ -1172,8 +1523,8 @@ function renderHistTab(){
     ["WINS",ST.wins,"#00C47A"],
     ["LOSSES",ST.losses,"#FF4040"],
     ["WR",wr+"%",parseFloat(wr)>=50?"#00C47A":"#FF4040"],
-    ["PNL","$"+ST.pnl.toFixed(2),ST.pnl>=0?"#00C47A":"#FF4040"],
-    ["DAY","$"+ST.dayLoss.toFixed(2),ST.dayLoss>0?"#F0B90B":"var(--t4)"]
+    ["PNL",(ST.pnl>=0?"+$":"-$")+Math.abs(ST.pnl).toFixed(2),ST.pnl>=0?"#00C47A":"#FF4040"],
+    ["DAY",ST.dayLoss>0?"-$"+ST.dayLoss.toFixed(2):"$0",ST.dayLoss>0?"#FF4040":"var(--t4)"]
   ].map(function(r){
     return '<div class="st"><div class="sl">'+r[0]+'</div><div class="sv" style="color:'+r[2]+';font-size:16px;">'+r[1]+'</div></div>';
   }).join("");
@@ -1187,7 +1538,7 @@ function renderHistTab(){
       '<span style="color:var(--t4);">'+t.time+'</span>'+
       '<span style="color:'+(t.side==="LONG"?"#00C47A":"#FF4040")+';">'+t.side+'</span>'+
       '<span style="color:'+(t.result==="TP"?"#00C47A":"#FF4040")+';">'+t.result+'</span>'+
-      '<div><div style="color:'+(t.pnl>=0?"#00C47A":"#FF4040")+';font-weight:800;">'+(t.pnl>=0?"+":"")+"$"+Math.abs(t.pnl).toFixed(2)+'</div>'+
+      '<div><div style="color:'+(t.pnl>=0?"#00C47A":"#FF4040")+';font-weight:800;">'+(t.pnl>=0?"+$":"-$")+Math.abs(t.pnl).toFixed(2)+'</div>'+
       '<div style="color:var(--t4);font-size:10px;">'+(t.qty||"-")+'</div></div>'+
       '</div>';
   }).join("");
@@ -1253,6 +1604,7 @@ function initChatQBtns(){
 // =============================================================
 window.onload=function(){
   loadState();
+  loadSettings();
   initChartEvents();
   renderKZBar();
   renderDash();
