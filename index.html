@@ -406,7 +406,7 @@ var C = {
   ADX_LEN:14, ADX_MIN:20,
   ATR_LEN:14, MAX_BODY:0.70, MIN_BODY:0.15,
   SL_BUF:0.10, RR:2.0,
-  COOLDOWN:5, MAX_SESS:4, MAX_OPEN:2,
+  COOLDOWN:5, MAX_SESS:4, MAX_OPEN:1,
   MAX_RISK:2.0, MAX_DAY_LOSS:8.0,
   LON_S:7, LON_E:10, NY_S:13, NY_E:16,
   COMMISSION_RATE:0.00055  // Bybit taker 0.055% per side
@@ -434,7 +434,7 @@ function freshState() {
 
 var ST = freshState();
 var candles = [], price = null, pchg = 0, SIG = null;
-var botOn = false, botTimer = null, tickTimer = null;
+var botOn = false, botTimer = null, tickTimer = null, liveTimer = null;
 var logs = [], trades = [], chatBusy = false;
 var curTab = "dash";
 var CW = 6, CGAP = 2, CVIS = 80;
@@ -636,17 +636,13 @@ function calcADX(cs, p) {
 }
 
 // =============================================================
-//  LOT SIZING — total risk (price move + round-trip fee) = MAX_RISK
+//  LOT SIZING — price-move risk = MAX_RISK (commission shown separately)
 // =============================================================
 function lotSize(entry, sl) {
   var dist = Math.abs(entry-sl);
   if (!dist || dist<0.01) return 0;
-  // Old formula: qty = MAX_RISK / dist  → only covers price move, fee is extra
-  // Fixed:       total loss = qty*dist + qty*(entry+sl)*rate = MAX_RISK
-  //              → qty = MAX_RISK / (dist + (entry+sl)*rate)
-  var totalCost = dist + (entry + Math.abs(sl)) * C.COMMISSION_RATE;
-  // Round to Bybit step size (0.001 BTC) so sim qty matches live qty exactly
-  var raw = C.MAX_RISK / totalCost;
+  // qty × dist = MAX_RISK  →  SL hit costs exactly $MAX_RISK gross on Bybit
+  var raw = C.MAX_RISK / dist;
   return parseFloat(Math.max(0.001, Math.round(raw/0.001)*0.001).toFixed(3));
 }
 
@@ -749,10 +745,10 @@ function evalSignal(cs) {
   var sessOk=ST.kzCnt<C.MAX_SESS, slotOk=ST.openCount<C.MAX_OPEN;
   var dayOk=ST.dayLoss<C.MAX_DAY_LOSS;
   var allOk=adxOk&&kzOk&&cdOk&&sessOk&&slotOk&&dayOk;
-  var canBuy=bull&&inZone&&longC&&allOk&&!ST.inLong&&!ST.inShort;
-  var canSell=bear&&inZone&&shortC&&allOk&&!ST.inLong&&!ST.inShort;
   var slL=last.low-C.SL_BUF*atrV,  tpL=last.close+(last.close-slL)*C.RR;
   var slS=last.high+C.SL_BUF*atrV, tpS=last.close-(slS-last.close)*C.RR;
+  var canBuy=bull&&inZone&&longC&&allOk&&!ST.inLong&&!ST.inShort;
+  var canSell=bear&&inZone&&shortC&&allOk&&!ST.inLong&&!ST.inShort;
   return {
     signal:canBuy?"BUY":canSell?"SELL":null,
     price:last.close, atrV:atrV, e9:e9, e15:e15, adxV:adxV,
@@ -844,6 +840,58 @@ function fetchCandles(limit, cb) {
     .catch(function(e){cb(e.message||"fetch error");});
 }
 
+// Paginated fetch — up to targetBars (1000 per Bybit page)
+function fetchAllCandles(targetBars, cb) {
+  var allBars = [];
+  var endMs = null;
+  var maxPages = Math.ceil(targetBars / 1000);
+  var page = 0;
+  function fetchPage() {
+    var url = "https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=1&limit=1000";
+    if (endMs) url += "&end=" + endMs;
+    fetch(url)
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if (d.retCode!==0) { cb(d.retMsg||"Bybit kline error"); return; }
+        var list = d.result.list; // newest-first
+        if (!list.length) { finalize(); return; }
+        var oldestTs = +list[list.length-1][0];
+        var batch = list.slice().reverse().map(function(x){
+          return {time:+x[0],open:+x[1],high:+x[2],low:+x[3],close:+x[4],volume:+x[5]};
+        });
+        allBars = batch.concat(allBars); // prepend older page in front
+        page++;
+        if (allBars.length >= targetBars || list.length < 1000 || page >= maxPages) {
+          finalize();
+        } else {
+          endMs = oldestTs - 1;
+          fetchPage();
+        }
+      })
+      .catch(function(e){cb(e.message||"fetch error");});
+  }
+  function finalize() {
+    if (allBars.length > targetBars) allBars = allBars.slice(allBars.length - targetBars);
+    cb(null, allBars);
+  }
+  fetchPage();
+}
+
+// Merge fresh (shorter, recent) into existing (longer, historical) without duplicating bars
+function mergeCandles(existing, fresh) {
+  if (!existing.length) return fresh;
+  if (!fresh.length) return existing;
+  var cutTime = fresh[0].time;
+  for (var i = existing.length - 1; i >= 0; i--) {
+    if (existing[i].time < cutTime) {
+      var merged = existing.slice(0, i + 1).concat(fresh);
+      if (merged.length > 5000) merged = merged.slice(merged.length - 5000);
+      return merged;
+    }
+  }
+  return fresh;
+}
+
 function fetchTicker(cb) {
   fetch("https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT")
     .then(function(r){return r.json();})
@@ -883,14 +931,27 @@ function claudeMsg(sys, msg, maxTok, cb) {
 // =============================================================
 function loadCandles(cb) {
   setStat("loading");
-  fetchCandles(200, function(err, data) {
+  addLog("Fetching history…","info");
+  fetchAllCandles(5000, function(err, data) {
     if (err) { setStat("error"); addLog("Load failed: "+err,"error"); if(cb)cb(err); return; }
     candles=data;
     setStat("live");
-    addLog("Loaded "+candles.length+" bars","success");
+    addLog("Loaded "+candles.length+" bars (~"+Math.round(candles.length/60)+"h history)","success");
     SIG=evalSignal(candles.slice(0,-1));
     drawChart();
     renderAll();
+    if (cb) cb(null);
+  });
+}
+
+// Quick refresh — fetches latest 500 bars and merges into existing history
+function refreshData(cb) {
+  fetchCandles(500, function(err, data) {
+    if (err) { addLog("Refresh failed: "+err,"error"); if(cb)cb(err); return; }
+    candles = mergeCandles(candles, data);
+    setStat("live");
+    SIG=evalSignal(candles.slice(0,-1));
+    drawChart(); renderAll();
     if (cb) cb(null);
   });
 }
@@ -903,7 +964,7 @@ function loadTicker() {
   });
 }
 
-function doRefresh() { loadCandles(null); loadTicker(); }
+function doRefresh() { refreshData(null); loadTicker(); }
 
 // =============================================================
 //  BOT TICK
@@ -911,9 +972,9 @@ function doRefresh() { loadCandles(null); loadTicker(); }
 function tick() {
   if (!botOn) return;
   dailyReset(); sessReset();
-  fetchCandles(200, function(err, data) {
+  fetchCandles(500, function(err, data) {
     if (err) { addLog("Tick error: "+err,"error"); return; }
-    candles=data;
+    candles=mergeCandles(candles,data);
     var closed=candles.slice(0,-1), last=closed[closed.length-1];
     ST.barIdx++;
     checkExits(last.high, last.low);
@@ -921,24 +982,27 @@ function tick() {
     if (SIG&&SIG.signal) {
       if (SIG.signal==="BUY"&&!ST.inLong&&!ST.inShort) {
         var lot=SIG.lotL;
-        ST.inLong=true; ST.openTp=SIG.tpL; ST.openSl=SIG.slL; ST.openLot=lot;
+        // Round to 1dp — must match exactly what Bybit receives so exit levels align
+        var rSlL=parseFloat(SIG.slL.toFixed(1)), rTpL=parseFloat(SIG.tpL.toFixed(1));
+        ST.inLong=true; ST.openTp=rTpL; ST.openSl=rSlL; ST.openLot=lot;
         ST.openCount++; ST.total++; ST.lastSigBar=ST.barIdx; ST.kzCnt++;
-        ST.openTrades.push({side:"LONG",entry:SIG.price,sl:SIG.slL,tp:SIG.tpL,qty:lot,time:ts()});
+        ST.openTrades.push({side:"LONG",entry:SIG.price,sl:rSlL,tp:rTpL,qty:lot,time:ts()});
         saveState();
-        var estComm=commissionCost(lot,SIG.price,SIG.tpL);
-        addLog("BUY $"+SIG.price.toFixed(0)+" SL $"+SIG.slL.toFixed(0)+" TP $"+SIG.tpL.toFixed(0)+" | "+lot+" BTC | Risk $"+C.MAX_RISK+" | est.fee~$"+estComm,"buy");
+        var estComm=commissionCost(lot,SIG.price,rTpL);
+        addLog("BUY $"+SIG.price.toFixed(0)+" SL $"+rSlL.toFixed(1)+" TP $"+rTpL.toFixed(1)+" | "+lot+" BTC | Risk $"+C.MAX_RISK+" | fee~$"+estComm,"buy");
         playSound("entry"); doVibrate([60]);
-        placeBybitOrder("BUY", lot, SIG.slL, SIG.tpL);
+        placeBybitOrder("BUY", lot, rSlL, rTpL);
       } else if (SIG.signal==="SELL"&&!ST.inLong&&!ST.inShort) {
         var lot2=SIG.lotS;
-        ST.inShort=true; ST.openTp=SIG.tpS; ST.openSl=SIG.slS; ST.openLot=lot2;
+        var rSlS=parseFloat(SIG.slS.toFixed(1)), rTpS=parseFloat(SIG.tpS.toFixed(1));
+        ST.inShort=true; ST.openTp=rTpS; ST.openSl=rSlS; ST.openLot=lot2;
         ST.openCount++; ST.total++; ST.lastSigBar=ST.barIdx; ST.kzCnt++;
-        ST.openTrades.push({side:"SHORT",entry:SIG.price,sl:SIG.slS,tp:SIG.tpS,qty:lot2,time:ts()});
+        ST.openTrades.push({side:"SHORT",entry:SIG.price,sl:rSlS,tp:rTpS,qty:lot2,time:ts()});
         saveState();
-        var estComm2=commissionCost(lot2,SIG.price,SIG.tpS);
-        addLog("SELL $"+SIG.price.toFixed(0)+" SL $"+SIG.slS.toFixed(0)+" TP $"+SIG.tpS.toFixed(0)+" | "+lot2+" BTC | Risk $"+C.MAX_RISK+" | est.fee~$"+estComm2,"sell");
+        var estComm2=commissionCost(lot2,SIG.price,rTpS);
+        addLog("SELL $"+SIG.price.toFixed(0)+" SL $"+rSlS.toFixed(1)+" TP $"+rTpS.toFixed(1)+" | "+lot2+" BTC | Risk $"+C.MAX_RISK+" | fee~$"+estComm2,"sell");
         playSound("entry"); doVibrate([60]);
-        placeBybitOrder("SELL", lot2, SIG.slS, SIG.tpS);
+        placeBybitOrder("SELL", lot2, rSlS, rTpS);
       }
     }
     var tot=ST.wins+ST.losses, wr=tot>0?((ST.wins/tot)*100).toFixed(1):"0.0";
@@ -980,7 +1044,7 @@ function toggleBot() {
 function doReset() {
   if (botOn) toggleBot();
   ST=freshState(); logs=[]; trades=[];
-  try { localStorage.removeItem("tcbot_trades"); localStorage.removeItem("tcbot_stats"); } catch(e){}
+  try { localStorage.removeItem("tcbot_trades"); localStorage.removeItem("tcbot_stats"); localStorage.removeItem("tcbot_open"); } catch(e){}
   renderAll(); addLog("State reset","info");
 }
 
@@ -1005,6 +1069,8 @@ function doConnClaude() {
       loadTicker();
       if (tickTimer) clearInterval(tickTimer);
       tickTimer=setInterval(loadTicker,15000);
+      if (liveTimer) clearInterval(liveTimer);
+      liveTimer=setInterval(liveCandle,5000);
     } else {
       setConnMsg("ccMsg","error","Binance load failed: "+err);
     }
@@ -1126,6 +1192,33 @@ function chatAppend(role, text, loading) {
   box.appendChild(wrap);
   box.scrollTop=box.scrollHeight;
   return body;
+}
+
+// =============================================================
+//  LIVE CANDLE — updates forming bar every 5 s so chart matches Bybit in real time
+// =============================================================
+function liveCandle() {
+  if (!candles.length) return;
+  fetchCandles(3, function(err, data) {
+    if (err || !data.length) return;
+    // fetchCandles returns oldest-first; last element is the forming bar
+    var forming = data[data.length - 1];
+    var last = candles[candles.length - 1];
+    if (forming.time === last.time) {
+      // Same bar — update OHLCV in place so wicks/body stay current
+      candles[candles.length - 1] = forming;
+    } else if (forming.time > last.time) {
+      // New bar started between bot ticks — merge it in
+      candles = mergeCandles(candles, data);
+    }
+    // Real-time exit detection — fires within 5 s of Bybit hitting SL/TP
+    if (ST.inLong || ST.inShort) {
+      var wasOpen = true;
+      checkExits(forming.high, forming.low);
+      if (wasOpen && !ST.inLong && !ST.inShort) renderAll();
+    }
+    drawChart();
+  });
 }
 
 // =============================================================
@@ -1376,13 +1469,23 @@ function renderDash(){
       (function(){
         var netLoss=Math.abs(tradePnl(lot,SIG.price,sl,isBuy?"LONG":"SHORT"));
         var netGain=tradePnl(lot,SIG.price,tp,isBuy?"LONG":"SHORT");
-        var fee=commissionCost(lot,SIG.price,sl);
-        return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">'+
+        var feeRt=commissionCost(lot,SIG.price,tp); // round-trip fee using TP exit price
+        var grossSl=parseFloat((lot*dist).toFixed(2));
+        var grossTp=parseFloat((lot*dist*C.RR).toFixed(2));
+        return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-bottom:6px;">'+
+        '<div style="background:rgba(255,64,64,0.08);border-radius:6px;padding:6px;text-align:center;">'+
+          '<div style="font-size:9px;color:var(--t4);">GROSS RISK (SL)</div>'+
+          '<div style="font-size:16px;font-weight:900;color:#FF4040;">-$'+grossSl.toFixed(2)+'</div></div>'+
+        '<div style="background:rgba(0,196,122,0.08);border-radius:6px;padding:6px;text-align:center;">'+
+          '<div style="font-size:9px;color:var(--t4);">GROSS REWARD (TP)</div>'+
+          '<div style="font-size:16px;font-weight:900;color:#00C47A;">+$'+grossTp.toFixed(2)+'</div></div>'+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;font-size:11px;">'+
         '<div style="color:var(--t4);">SL dist: <span style="color:var(--t1);font-weight:700;">$'+dist.toFixed(0)+'</span></div>'+
-        '<div style="color:var(--t4);">Fee (2 legs): <span style="color:#F97316;font-weight:700;">~$'+fee+'</span></div>'+
+        '<div style="color:var(--t4);">Fee (RT): <span style="color:#F97316;font-weight:700;">~$'+feeRt+'</span></div>'+
+        '<div style="color:var(--t4);">ADX: <span style="color:var(--t1);font-weight:700;">'+SIG.adxV.toFixed(1)+'</span></div>'+
         '<div style="color:var(--t4);">Net loss: <span style="color:#FF4040;font-weight:700;">-$'+netLoss.toFixed(2)+'</span></div>'+
         '<div style="color:var(--t4);">Net gain: <span style="color:#00C47A;font-weight:700;">+$'+netGain.toFixed(2)+'</span></div>'+
-        '<div style="color:var(--t4);">ADX: <span style="color:var(--t1);font-weight:700;">'+SIG.adxV.toFixed(1)+'</span></div>'+
         '</div>';
       })();
   } else { sc.style.display="none"; }
@@ -1407,7 +1510,12 @@ function renderDash(){
         (function(){
           var netLoss=Math.abs(tradePnl(t.qty,t.entry,t.sl,t.side));
           var netGain=tradePnl(t.qty,t.entry,t.tp,t.side);
+          var grossRisk=parseFloat((t.qty*Math.abs(t.entry-t.sl)).toFixed(2));
+          var grossReward=parseFloat((t.qty*Math.abs(t.tp-t.entry)).toFixed(2));
+          var fee=commissionCost(t.qty,t.entry,t.tp);
           return '<div><div style="font-size:9px;color:var(--t4);">QTY</div><div style="color:#F0B90B;font-weight:800;">'+t.qty+' BTC</div></div>'+
+          '<div><div style="font-size:9px;color:var(--t4);">GROSS RISK/RWD</div><div style="color:var(--t1);font-weight:700;">$'+grossRisk+' / $'+grossReward+'</div></div>'+
+          '<div><div style="font-size:9px;color:var(--t4);">FEE (RT)</div><div style="color:#F97316;font-weight:700;">~$'+fee+'</div></div>'+
           '<div><div style="font-size:9px;color:var(--t4);">NET LOSS</div><div style="color:#FF4040;font-weight:700;">-$'+netLoss.toFixed(2)+'</div></div>'+
           '<div><div style="font-size:9px;color:var(--t4);">NET GAIN</div><div style="color:#00C47A;font-weight:700;">+$'+netGain.toFixed(2)+'</div></div>';
         })()+
@@ -1633,13 +1741,16 @@ window.onload=function(){
   tickClock();
   setInterval(tickClock,1000);
 
-  // Auto-load data if key was saved
-  if (KEY_C && !candles.length) {
+  // Auto-load market data (Bybit kline is public — no key required)
+  if (!candles.length) {
     loadCandles(function(err){
       if (!err) {
         loadTicker();
         if (tickTimer) clearInterval(tickTimer);
         tickTimer=setInterval(loadTicker,15000);
+        // Live forming-candle updater — keeps chart in sync with Bybit every 5 s
+        if (liveTimer) clearInterval(liveTimer);
+        liveTimer=setInterval(liveCandle,5000);
       }
     });
   }
