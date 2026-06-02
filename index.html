@@ -362,6 +362,12 @@ input[type=range]{padding:0;border:none;background:transparent;border-radius:0;h
           <div><div class="sLbl">Vibration</div><div class="sSub">Haptic feedback on mobile</div></div>
           <label class="tog"><input type="checkbox" id="setVib" onchange="onVibToggle(this)" checked><span class="togS"></span></label>
         </div>
+        <div class="sRow sRowCol">
+          <div><div class="sLbl">Push Alerts (ntfy.sh)</div><div class="sSub">Get signal &amp; exit alerts on iPhone — install ntfy app, enter topic below</div></div>
+          <input type="text" id="setNtfy" placeholder="e.g. tcbot-himanshu" autocomplete="off" autocapitalize="none" spellcheck="false"
+            style="margin-top:8px;width:100%;box-sizing:border-box;background:var(--b2);border:1px solid var(--b3);color:var(--t1);border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;outline:none;"
+            oninput="onNtfyChange(this)">
+        </div>
 
       </div>
     </div>
@@ -443,12 +449,12 @@ var chartOff = 0, chartDrag = false, chartDragX = null;
 // =============================================================
 //  SETTINGS
 // =============================================================
-var SETTINGS = { theme:"dark", soundOn:true, volume:0.7, vibrate:true };
+var SETTINGS = { theme:"dark", soundOn:true, volume:0.7, vibrate:true, ntfyTopic:"" };
 
 function loadSettings() {
   try {
     var s = localStorage.getItem("tcbot_settings");
-    if (s) SETTINGS = Object.assign({theme:"dark",soundOn:true,volume:0.7,vibrate:true}, JSON.parse(s));
+    if (s) SETTINGS = Object.assign({theme:"dark",soundOn:true,volume:0.7,vibrate:true,ntfyTopic:""}, JSON.parse(s));
     applyTheme(SETTINGS.theme);
     var dk=E("setDark"); if(dk) dk.checked = SETTINGS.theme==="dark";
     var sn=E("setSound"); if(sn) sn.checked = SETTINGS.soundOn;
@@ -456,6 +462,7 @@ function loadSettings() {
     var vol=E("setVol"); var vlbl=E("setVolLabel");
     if(vol){ vol.value=Math.round(SETTINGS.volume*100); }
     if(vlbl){ vlbl.textContent=Math.round(SETTINGS.volume*100)+"%"; }
+    var nt=E("setNtfy"); if(nt) nt.value=SETTINGS.ntfyTopic||"";
   } catch(e){}
 }
 
@@ -475,6 +482,19 @@ function onThemeToggle(el) {
   applyTheme(SETTINGS.theme); saveSettings();
 }
 function onSoundToggle(el) { SETTINGS.soundOn=el.checked; saveSettings(); }
+function onNtfyChange(el) { SETTINGS.ntfyTopic=el.value.trim(); saveSettings(); }
+
+function pushNtfy(title, msg, tags) {
+  var topic=SETTINGS.ntfyTopic;
+  if (!topic) return;
+  try {
+    fetch("https://ntfy.sh/"+encodeURIComponent(topic), {
+      method:"POST",
+      headers:{ "Title":title, "Priority":"high", "Tags":tags||"bell" },
+      body:msg
+    }).catch(function(){});
+  } catch(e){}
+}
 function onVolChange(el) {
   SETTINGS.volume=el.value/100;
   E("setVolLabel").textContent=el.value+"%";
@@ -784,6 +804,7 @@ function checkExits(hi, lo) {
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="LONG";});
       ST.openLot=0; saveState();
       addLog("LONG TP  +$"+Math.abs(p).toFixed(2)+"  Total:$"+ST.pnl.toFixed(2),"win");
+      pushNtfy("TCBot WIN +$"+Math.abs(p).toFixed(2),"LONG TP hit | Total:$"+ST.pnl.toFixed(2),"tada,moneybag");
       playSound("win"); doVibrate([100,50,100]);
     } else if (lo<=ST.openSl) {
       var p2=tradePnl(ST.openLot,ent,ST.openSl,"LONG");
@@ -794,6 +815,7 @@ function checkExits(hi, lo) {
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="LONG";});
       ST.openLot=0; saveState();
       addLog("LONG SL  -$"+Math.abs(p2).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2),"loss");
+      pushNtfy("TCBot LOSS -$"+Math.abs(p2).toFixed(2),"LONG SL hit | Day:-$"+ST.dayLoss.toFixed(2),"x,rotating_light");
       playSound("loss"); doVibrate([300]);
     }
   }
@@ -808,6 +830,7 @@ function checkExits(hi, lo) {
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="SHORT";});
       ST.openLot=0; saveState();
       addLog("SHORT TP  +$"+Math.abs(p3).toFixed(2)+"  Total:$"+ST.pnl.toFixed(2),"win");
+      pushNtfy("TCBot WIN +$"+Math.abs(p3).toFixed(2),"SHORT TP hit | Total:$"+ST.pnl.toFixed(2),"tada,moneybag");
       playSound("win"); doVibrate([100,50,100]);
     } else if (hi>=ST.openSl) {
       var p4=tradePnl(ST.openLot,ent2,ST.openSl,"SHORT");
@@ -818,6 +841,7 @@ function checkExits(hi, lo) {
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="SHORT";});
       ST.openLot=0; saveState();
       addLog("SHORT SL  -$"+Math.abs(p4).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2),"loss");
+      pushNtfy("TCBot LOSS -$"+Math.abs(p4).toFixed(2),"SHORT SL hit | Day:-$"+ST.dayLoss.toFixed(2),"x,rotating_light");
       playSound("loss"); doVibrate([300]);
     }
   }
@@ -990,6 +1014,7 @@ function tick() {
         saveState();
         var estComm=commissionCost(lot,SIG.price,rTpL);
         addLog("BUY $"+SIG.price.toFixed(0)+" SL $"+rSlL.toFixed(1)+" TP $"+rTpL.toFixed(1)+" | "+lot+" BTC | Risk $"+C.MAX_RISK+" | fee~$"+estComm,"buy");
+        pushNtfy("TCBot BUY $"+SIG.price.toFixed(0),"SL:$"+rSlL.toFixed(0)+" TP:$"+rTpL.toFixed(0)+" lot:"+lot+" BTC","chart_with_upwards_trend,green_circle");
         playSound("entry"); doVibrate([60]);
         placeBybitOrder("BUY", lot, rSlL, rTpL);
       } else if (SIG.signal==="SELL"&&!ST.inLong&&!ST.inShort) {
@@ -1001,6 +1026,7 @@ function tick() {
         saveState();
         var estComm2=commissionCost(lot2,SIG.price,rTpS);
         addLog("SELL $"+SIG.price.toFixed(0)+" SL $"+rSlS.toFixed(1)+" TP $"+rTpS.toFixed(1)+" | "+lot2+" BTC | Risk $"+C.MAX_RISK+" | fee~$"+estComm2,"sell");
+        pushNtfy("TCBot SELL $"+SIG.price.toFixed(0),"SL:$"+rSlS.toFixed(0)+" TP:$"+rTpS.toFixed(0)+" lot:"+lot2+" BTC","chart_with_downwards_trend,red_circle");
         playSound("entry"); doVibrate([60]);
         placeBybitOrder("SELL", lot2, rSlS, rTpS);
       }
