@@ -413,7 +413,7 @@ var C = {
   ATR_LEN:14, MAX_BODY:0.70, MIN_BODY:0.15,
   SL_BUF:0.10, RR:2.0,
   COOLDOWN:5, MAX_SESS:4, MAX_OPEN:1,
-  MAX_RISK:2.0, MAX_DAY_LOSS:8.0,
+  MAX_RISK:4.0, MAX_DAY_LOSS:16.0,
   LON_S:7, LON_E:10, NY_S:13, NY_E:16,
   COMMISSION_RATE:0.00055  // Bybit taker 0.055% per side
 };
@@ -1194,7 +1194,7 @@ function sendChat() {
     " Lot:$"+C.MAX_RISK+"/SL_dist":
     "No data yet.";
   claudeMsg(
-    "You are a BTC scalp analyst for the Trend Continuation Strategy: EMA9/15 pullback, ADX>=20, ATR body filter, London+NY kill zones, dynamic lot sizing ($2 risk per trade). Context:\n"+ctx+"\nBe concise, max 100 words.",
+    "You are a BTC scalp analyst for the Trend Continuation Strategy: EMA9/15 pullback, ADX>=20, ATR body filter, London+NY kill zones, dynamic lot sizing ($4 risk per trade). Context:\n"+ctx+"\nBe concise, max 100 words.",
     q, 350,
     function(err,txt){
       typing.textContent=err?"Error: "+err:txt;
@@ -1591,14 +1591,14 @@ function renderStratTab(){
     ["Min body","0.15 x ATR"],["SL buffer","0.10 x ATR"],
     ["R:R","2.0 : 1"],["Cooldown","5 bars"],
     ["Max/session","4"],["Max open","2"],
-    ["Max risk/trade","$2.00 (dynamic lot)"]
+    ["Max risk/trade","$4.00 (dynamic lot)"]
   ].map(function(r){return dr(r[0],r[1]);}).join("");
 
   E("spLot").innerHTML=
-    dr("Formula","Qty = $2 / |entry - SL|","#F0B90B")+
-    dr("SL $150 away","Qty=0.01333 BTC → loss=$2")+
-    dr("SL $80 away","Qty=0.02500 BTC → loss=$2")+
-    dr("At TP (2R)","Gain=$4 regardless of SL")+
+    dr("Formula","Qty = $4 / |entry - SL|","#F0B90B")+
+    dr("SL $150 away","Qty=0.02667 BTC → loss=$4")+
+    dr("SL $80 away","Qty=0.05000 BTC → loss=$4")+
+    dr("At TP (2R)","Gain=$8 regardless of SL")+
     dr("Commission","0.055% taker × 2 legs (entry+exit)","#F97316")+
     dr("Net TP gain","$4 minus fees (auto-deducted)","#F97316");
 
