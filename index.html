@@ -410,17 +410,12 @@ input[type=range]{padding:0;border:none;background:transparent;border-radius:0;h
 var C = {
   FAST_EMA:9, SLOW_EMA:15,
   ADX_LEN:14, ADX_MIN:20,
-  ATR_LEN:14,
   RR:2.0,
   COOLDOWN:5, MAX_OPEN:1,
   MAX_RISK:4.0, MAX_DAY_LOSS:16.0,
   MAX_CONSEC_LOSS:2,
   ASIA_END:7,
   COMMISSION_RATE:0.00055,  // Bybit taker 0.055% per side
-  // Minimum SL distance in $ — fee guard.
-  // Fee per trade = (MAX_RISK / SL_dist) * 2 * BTC_price * COMMISSION_RATE ≈ $288 / SL_dist at $65k BTC.
-  // Break-even (50% WR, 2R): fee < $2  →  SL_dist > $144.
-  // At $200: fee ≈ $1.44, net win = +$6.56, net loss = -$5.44, EV per 2 trades = +$1.12.
 };
 
 // =============================================================
@@ -758,7 +753,7 @@ function evalSignal(cs) {
   var i, closes=[];
   for (i=0;i<cs.length;i++) closes.push(cs[i].close);
   var last=cs[cs.length-1];
-  var atrV=calcATR(cs,C.ATR_LEN), e9=calcEMA(closes,C.FAST_EMA), e15=calcEMA(closes,C.SLOW_EMA), adxV=calcADX(cs,C.ADX_LEN);
+  var e9=calcEMA(closes,C.FAST_EMA), e15=calcEMA(closes,C.SLOW_EMA), adxV=calcADX(cs,C.ADX_LEN);
   var candleRange=last.high-last.low+0.0001;
   var body=Math.abs(last.close-last.open), mid=(last.high+last.low)/2;
   var bodyRatio=body/candleRange;
@@ -781,7 +776,7 @@ function evalSignal(cs) {
   var canSell=bear&&inZone&&shortC&&allOk&&!ST.inLong&&!ST.inShort;
   return {
     signal:canBuy?"BUY":canSell?"SELL":null,
-    price:last.close, atrV:atrV, e9:e9, e15:e15, adxV:adxV,
+    price:last.close, e9:e9, e15:e15, adxV:adxV,
     slL:slL, tpL:tpL, lotL:lotSize(last.close,slL),
     slS:slS, tpS:tpS, lotS:lotSize(last.close,slS),
     filters:{
@@ -1200,7 +1195,7 @@ function sendChat() {
   var ctx=SIG?
     "BTC:$"+(price?price.toFixed(0):"?")+
     " EMA9:"+SIG.e9.toFixed(1)+" EMA15:"+SIG.e15.toFixed(1)+
-    " ADX:"+SIG.adxV.toFixed(1)+" ATR:$"+SIG.atrV.toFixed(0)+
+    " ADX:"+SIG.adxV.toFixed(1)+
     " Signal:"+(SIG.signal||"NONE")+
     " W:"+ST.wins+"/L:"+ST.losses+" PnL:$"+ST.pnl.toFixed(2)+
     " DayLoss:$"+ST.dayLoss.toFixed(2)+
@@ -1208,7 +1203,7 @@ function sendChat() {
     " Lot:$"+C.MAX_RISK+"/SL_dist":
     "No data yet.";
   claudeMsg(
-    "You are a BTC scalp analyst for the Trend Continuation Strategy: EMA9/15 pullback, ADX>=20, ATR body filter, London+NY kill zones, dynamic lot sizing ($4 risk per trade). Context:\n"+ctx+"\nBe concise, max 100 words.",
+    "You are a BTC scalp analyst for the Trend Continuation Strategy: EMA9/15 pullback, ADX>=20, 60% body ratio, Asia session blocked, dynamic lot sizing ($4 risk per trade). Context:\n"+ctx+"\nBe concise, max 100 words.",
     q, 350,
     function(err,txt){
       typing.textContent=err?"Error: "+err:txt;
@@ -1575,7 +1570,7 @@ function renderDash(){
   var cd=ST.barIdx-ST.lastSigBar, sess=sessName();
   E("sessTbl").innerHTML=
     dr("Session", sess||"Off-session", sess?"#00C47A":"var(--t4)")+
-    dr("Session trades", ST.kzCnt+"/"+C.MAX_SESS)+
+    dr("Session trades", ST.kzCnt||0)+
     dr("Bar index", ST.barIdx)+
     dr("Cooldown", cd>=C.COOLDOWN?"READY":cd+"/"+C.COOLDOWN, cd>=C.COOLDOWN?"#00C47A":"#F0B90B")+
     dr("Kill zone", inKZ()?"ACTIVE":"INACTIVE", inKZ()?"#00C47A":"var(--t4)");
@@ -1584,16 +1579,16 @@ function renderDash(){
 function renderKZBar(){
   var h=utcH(), out="";
   for (var i=0;i<24;i++){
-    var isL=i>=C.LON_S&&i<C.LON_E, isN=i>=C.NY_S&&i<C.NY_E, cur=i===h;
-    var bg=cur?"#F0B90B":isL?"#00C47A33":isN?"#4A9EFF33":"#040C18";
-    var bd=cur?"1px solid #F0B90B":isL?"1px solid #00C47A55":isN?"1px solid #4A9EFF55":"1px solid transparent";
-    var col=cur?"#000":(isL||isN)?"var(--t1)":"var(--b3)";
+    var isAsia=i<C.ASIA_END, cur=i===h;
+    var bg=cur?"#F0B90B":isAsia?"#FF404033":"#040C18";
+    var bd=cur?"1px solid #F0B90B":isAsia?"1px solid #FF404055":"1px solid transparent";
+    var col=cur?"#000":isAsia?"var(--t4)":"var(--t1)";
     out+='<div class="kh" style="background:'+bg+';border:'+bd+';color:'+col+';">'+i+'</div>';
   }
   E("kzBar").innerHTML=out;
   var kt=E("kzTxt");
-  kt.textContent=inKZ()?"IN "+sessName():"OFF";
-  kt.style.color=inKZ()?"#00C47A":"var(--t4)";
+  kt.textContent=inKZ()?"IN "+sessName():"ASIA (blocked)";
+  kt.style.color=inKZ()?"#00C47A":"#FF4040";
 }
 
 function renderStratTab(){
@@ -1601,13 +1596,13 @@ function renderStratTab(){
     ["Symbol","BTCUSDT"],["Timeframe","1 minute"],
     ["Fast EMA","9 periods"],["Slow EMA","15 periods"],
     ["ADX length","14"],["ADX minimum",">=20"],
-    ["ATR length","14"],["Max body","0.70 x ATR"],
-    ["Min body","0.15 x ATR"],["SL buffer","0.10 x ATR"],
-    ["R:R",C.RR.toFixed(1)+" : 1 (break-even WR: "+(100/(1+C.RR)).toFixed(0)+"%)"],["Cooldown","5 bars"],
-    ["Max/session","4"],["Max open","1"],
+    ["Body ratio","≥ 0.60 (60% of candle range)"],
+    ["Stop Loss","Candle low (long) / candle high (short)"],
+    ["R:R",C.RR.toFixed(1)+" : 1"],["Cooldown","5 bars"],
+    ["Max open","1"],
     ["Max risk/trade","$"+C.MAX_RISK.toFixed(2)+" (dynamic lot)"],
-    ["Max consec losses",C.MAX_CONSEC_LOSS+" (then pauses til next session)"],
-    ["Min SL distance","$"+C.MIN_SL_DIST+" (fee guard)"]
+    ["Max consec losses",C.MAX_CONSEC_LOSS+" (then pauses)"],
+    ["Asia session","Blocked 00:00–06:59 UTC"]
   ].map(function(r){return dr(r[0],r[1]);}).join("");
 
   var livePrice = price || 65632;
@@ -1624,14 +1619,14 @@ function renderStratTab(){
     dr("Net win after fee","+"+"$"+netWin,"#00C47A")+
     dr("Net loss after fee","-$"+netLoss,"#FF4040")+
     dr("50% WR per 2 trades",(evPer2>=0?"+$":"-$")+Math.abs(evPer2)+" expected",evPer2>=0?"#00C47A":"#FF4040")+
-    dr("Commission","0.055% taker × 2 legs","#F97316")+
-    dr("Min SL guard","$"+C.MIN_SL_DIST+" ensures fee < $2/trade","#F97316");
+    dr("Commission","0.055% taker × 2 legs","#F97316");
 
   E("spKZ").innerHTML=
-    dr("London","07:00 – 10:00 UTC")+
-    dr("New York","13:00 – 16:00 UTC")+
-    dr("Now",sessName()||"Off-session",sessName()?"#00C47A":"var(--t4)")+
-    dr("Kill zone",inKZ()?"ACTIVE":"INACTIVE",inKZ()?"#00C47A":"var(--t4)");
+    dr("Asia (blocked)","00:00 – 06:59 UTC","#FF4040")+
+    dr("London","07:00 – 11:59 UTC","#00C47A")+
+    dr("New York","12:00 – 20:59 UTC","#4A9EFF")+
+    dr("Now",inKZ()?sessName():"ASIA (blocked)",inKZ()?"#00C47A":"#FF4040")+
+    dr("Status",inKZ()?"ACTIVE":"BLOCKED",inKZ()?"#00C47A":"#FF4040");
 
   if (SIG&&SIG.filters){
     E("spF").innerHTML=Object.keys(SIG.filters).map(function(name){
@@ -1659,8 +1654,7 @@ function renderStratTab(){
         dr("Max gain","$"+(lot*dist*C.RR).toFixed(2),"#00C47A")+
         dr("EMA9","$"+SIG.e9.toFixed(1),"#2B5EFF")+
         dr("EMA15","$"+SIG.e15.toFixed(1),"#F97316")+
-        dr("ADX",SIG.adxV.toFixed(1))+
-        dr("ATR","$"+SIG.atrV.toFixed(0));
+        dr("ADX",SIG.adxV.toFixed(1));
     } else { E("spLevCard").style.display="none"; }
   }
 }
@@ -1672,8 +1666,7 @@ function renderBotTab(){
     dr("Take Profit",C.RR+"R (2x risk)","#00C47A")+
     dr("Max open",C.MAX_OPEN)+
     dr("Cooldown",C.COOLDOWN+" bars")+
-    dr("Max/session",C.MAX_SESS)+
-    dr("Kill zones","London 7-10 + NY 13-16");
+    dr("Session filter","Asia blocked (00:00–06:59 UTC)","#FF4040");
   renderFullLog();
 }
 
