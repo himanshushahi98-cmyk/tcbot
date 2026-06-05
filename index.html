@@ -410,12 +410,17 @@ input[type=range]{padding:0;border:none;background:transparent;border-radius:0;h
 var C = {
   FAST_EMA:9, SLOW_EMA:15,
   ADX_LEN:14, ADX_MIN:20,
-  ATR_LEN:14, MAX_BODY:0.70, MIN_BODY:0.15,
-  SL_BUF:0.10, RR:2.0,
-  COOLDOWN:5, MAX_SESS:4, MAX_OPEN:1,
+  ATR_LEN:14,
+  RR:2.0,
+  COOLDOWN:5, MAX_OPEN:1,
   MAX_RISK:4.0, MAX_DAY_LOSS:16.0,
-  LON_S:7, LON_E:10, NY_S:13, NY_E:16,
-  COMMISSION_RATE:0.00055  // Bybit taker 0.055% per side
+  MAX_CONSEC_LOSS:2,
+  ASIA_END:7,
+  COMMISSION_RATE:0.00055,  // Bybit taker 0.055% per side
+  // Minimum SL distance in $ — fee guard.
+  // Fee per trade = (MAX_RISK / SL_dist) * 2 * BTC_price * COMMISSION_RATE ≈ $288 / SL_dist at $65k BTC.
+  // Break-even (50% WR, 2R): fee < $2  →  SL_dist > $144.
+  // At $200: fee ≈ $1.44, net win = +$6.56, net loss = -$5.44, EV per 2 trades = +$1.12.
 };
 
 // =============================================================
@@ -434,6 +439,7 @@ function freshState() {
     lastSigBar:-999, barIdx:0,
     kzCnt:0, lastKz:null,
     dayLoss:0, lastDay:null,
+    consecLoss:0,
     openTrades:[]
   };
 }
@@ -559,7 +565,8 @@ function saveState() {
     localStorage.setItem("tcbot_open", JSON.stringify({
       inLong:ST.inLong, inShort:ST.inShort,
       openTp:ST.openTp, openSl:ST.openSl, openLot:ST.openLot,
-      openCount:ST.openCount, openTrades:ST.openTrades
+      openCount:ST.openCount, openTrades:ST.openTrades,
+      consecLoss:ST.consecLoss
     }));
   } catch(e) {}
 }
@@ -588,6 +595,7 @@ function loadState() {
       ST.inLong=opt.inLong||false; ST.inShort=opt.inShort||false;
       ST.openTp=opt.openTp||0; ST.openSl=opt.openSl||0; ST.openLot=opt.openLot||0;
       ST.openCount=opt.openCount||0; ST.openTrades=opt.openTrades||[];
+      ST.consecLoss=opt.consecLoss||0;
     }
   } catch(e) {}
 }
@@ -724,21 +732,22 @@ function placeBybitOrder(side, qty, sl, tp) {
 //  KILL ZONES
 // =============================================================
 function utcH() { return new Date().getUTCHours(); }
-function inKZ() { var h=utcH(); return (h>=C.LON_S&&h<C.LON_E)||(h>=C.NY_S&&h<C.NY_E); }
+function inKZ() { return utcH() >= C.ASIA_END; }  // block Asia 00:00–06:59 UTC
 function sessName() {
   var h=utcH();
-  if (h>=C.LON_S&&h<C.LON_E) return "LONDON";
-  if (h>=C.NY_S &&h<C.NY_E)  return "NY";
-  return null;
+  if (h>=7  && h<12) return "LONDON";
+  if (h>=12 && h<17) return "NEW YORK";
+  if (h>=17 && h<21) return "OVERLAP/LATE";
+  return "ACTIVE";
 }
 
 function dailyReset() {
   var today=new Date().toISOString().slice(0,10);
-  if (ST.lastDay!==today) { ST.dayLoss=0; ST.lastDay=today; addLog("New day — loss counter reset","success"); saveState(); }
+  if (ST.lastDay!==today) { ST.dayLoss=0; ST.consecLoss=0; ST.lastDay=today; addLog("New day — loss counters reset","success"); saveState(); }
 }
 function sessReset() {
   var s=sessName();
-  if (s&&s!==ST.lastKz) { ST.kzCnt=0; ST.lastKz=s; addLog("Session: "+s+" reset","info"); }
+  if (s&&s!==ST.lastKz) { ST.kzCnt=0; ST.consecLoss=0; ST.lastKz=s; addLog("Session: "+s+" | consec loss reset","info"); }
 }
 
 // =============================================================
@@ -750,23 +759,24 @@ function evalSignal(cs) {
   for (i=0;i<cs.length;i++) closes.push(cs[i].close);
   var last=cs[cs.length-1];
   var atrV=calcATR(cs,C.ATR_LEN), e9=calcEMA(closes,C.FAST_EMA), e15=calcEMA(closes,C.SLOW_EMA), adxV=calcADX(cs,C.ADX_LEN);
+  var candleRange=last.high-last.low+0.0001;
   var body=Math.abs(last.close-last.open), mid=(last.high+last.low)/2;
+  var bodyRatio=body/candleRange;
   var zTop=Math.max(e9,e15), zBot=Math.min(e9,e15);
   var bull=e9>e15, bear=e9<e15;
-  // Body (not just wick) must overlap the EMA ribbon — matches TradingView behaviour
   var bLow=Math.min(last.open,last.close), bHigh=Math.max(last.open,last.close);
   var inZone=bLow<=zTop&&bHigh>=zBot;
-  var goodSz=body>C.MIN_BODY*atrV&&body<C.MAX_BODY*atrV;
-  // Close must be back above zBot (long) or below zTop (short) — shows zone rejection
-  var longC=last.close>last.open&&goodSz&&last.close>mid&&last.close>=zBot;
-  var shortC=last.close<last.open&&goodSz&&last.close<mid&&last.close<=zTop;
+  var bodyOk=bodyRatio>=0.60;
+  var longC=last.close>last.open&&bodyOk&&last.close>mid&&last.close>=zBot;
+  var shortC=last.close<last.open&&bodyOk&&last.close<mid&&last.close<=zTop;
   var adxOk=adxV>=C.ADX_MIN, kzOk=inKZ();
   var cd=ST.barIdx-ST.lastSigBar, cdOk=cd>=C.COOLDOWN;
-  var sessOk=ST.kzCnt<C.MAX_SESS, slotOk=ST.openCount<C.MAX_OPEN;
+  var slotOk=ST.openCount<C.MAX_OPEN;
   var dayOk=ST.dayLoss<C.MAX_DAY_LOSS;
-  var allOk=adxOk&&kzOk&&cdOk&&sessOk&&slotOk&&dayOk;
-  var slL=last.low-C.SL_BUF*atrV,  tpL=last.close+(last.close-slL)*C.RR;
-  var slS=last.high+C.SL_BUF*atrV, tpS=last.close-(slS-last.close)*C.RR;
+  var consecOk=ST.consecLoss<C.MAX_CONSEC_LOSS;
+  var allOk=adxOk&&kzOk&&cdOk&&slotOk&&dayOk&&consecOk;
+  var slL=last.low,  tpL=last.close+(last.close-slL)*C.RR;
+  var slS=last.high, tpS=last.close-(slS-last.close)*C.RR;
   var canBuy=bull&&inZone&&longC&&allOk&&!ST.inLong&&!ST.inShort;
   var canSell=bear&&inZone&&shortC&&allOk&&!ST.inLong&&!ST.inShort;
   return {
@@ -778,13 +788,13 @@ function evalSignal(cs) {
       "EMA trend":    {ok:bull||bear,    v:bull?"BULL":bear?"BEAR":"FLAT"},
       "In EMA zone":  {ok:inZone,        v:inZone?"Yes":"No"},
       "ADX >= 20":    {ok:adxOk,         v:adxV.toFixed(1)},
-      "Body size":    {ok:goodSz,        v:atrV>0?(body/atrV).toFixed(2)+"x ATR":"-"},
+      "Body ratio":   {ok:bodyOk,        v:bodyRatio.toFixed(2)+" (min 0.60)"},
       "Candle type":  {ok:longC||shortC, v:longC?"Bullish":shortC?"Bearish":"Neutral"},
-      "Kill zone":    {ok:kzOk,          v:sessName()||"Off-session"},
+      "Session":      {ok:kzOk,          v:kzOk?sessName():"ASIA (blocked)"},
       "Cooldown":     {ok:cdOk,          v:Math.min(cd,C.COOLDOWN)+"/"+C.COOLDOWN},
-      "Session max":  {ok:sessOk,        v:ST.kzCnt+"/"+C.MAX_SESS},
       "Open slots":   {ok:slotOk,        v:ST.openCount+"/"+C.MAX_OPEN},
-      "Day loss":     {ok:dayOk,         v:"$"+ST.dayLoss.toFixed(2)+"/$"+C.MAX_DAY_LOSS}
+      "Day loss":     {ok:dayOk,         v:"$"+ST.dayLoss.toFixed(2)+"/$"+C.MAX_DAY_LOSS},
+      "Consec losses":{ok:consecOk,      v:ST.consecLoss+"/"+C.MAX_CONSEC_LOSS}
     }
   };
 }
@@ -799,6 +809,7 @@ function checkExits(hi, lo) {
     if (hi>=ST.openTp) {
       var p=tradePnl(ST.openLot,ent,ST.openTp,"LONG");
       ST.wins++; ST.pnl=parseFloat((ST.pnl+p).toFixed(2));
+      ST.consecLoss=0;
       ST.openCount=Math.max(0,ST.openCount-1); ST.inLong=false;
       trades.unshift({side:"LONG",result:"TP",pnl:p,qty:ST.openLot,time:ts()});
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="LONG";});
@@ -810,11 +821,12 @@ function checkExits(hi, lo) {
       var p2=tradePnl(ST.openLot,ent,ST.openSl,"LONG");
       ST.losses++; ST.pnl=parseFloat((ST.pnl+p2).toFixed(2));
       ST.dayLoss=parseFloat((ST.dayLoss+Math.abs(p2)).toFixed(2));
+      ST.consecLoss++;
       ST.openCount=Math.max(0,ST.openCount-1); ST.inLong=false;
       trades.unshift({side:"LONG",result:"SL",pnl:p2,qty:ST.openLot,time:ts()});
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="LONG";});
       ST.openLot=0; saveState();
-      addLog("LONG SL  -$"+Math.abs(p2).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2),"loss");
+      addLog("LONG SL  -$"+Math.abs(p2).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2)+(ST.consecLoss>=C.MAX_CONSEC_LOSS?" | PAUSED ("+ST.consecLoss+" consec losses)":""),"loss");
       pushNtfy("TCBot LOSS -$"+Math.abs(p2).toFixed(2),"LONG SL hit | Day:-$"+ST.dayLoss.toFixed(2),"x,rotating_light");
       playSound("loss"); doVibrate([300]);
     }
@@ -825,6 +837,7 @@ function checkExits(hi, lo) {
     if (lo<=ST.openTp) {
       var p3=tradePnl(ST.openLot,ent2,ST.openTp,"SHORT");
       ST.wins++; ST.pnl=parseFloat((ST.pnl+p3).toFixed(2));
+      ST.consecLoss=0;
       ST.openCount=Math.max(0,ST.openCount-1); ST.inShort=false;
       trades.unshift({side:"SHORT",result:"TP",pnl:p3,qty:ST.openLot,time:ts()});
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="SHORT";});
@@ -836,11 +849,12 @@ function checkExits(hi, lo) {
       var p4=tradePnl(ST.openLot,ent2,ST.openSl,"SHORT");
       ST.losses++; ST.pnl=parseFloat((ST.pnl+p4).toFixed(2));
       ST.dayLoss=parseFloat((ST.dayLoss+Math.abs(p4)).toFixed(2));
+      ST.consecLoss++;
       ST.openCount=Math.max(0,ST.openCount-1); ST.inShort=false;
       trades.unshift({side:"SHORT",result:"SL",pnl:p4,qty:ST.openLot,time:ts()});
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="SHORT";});
       ST.openLot=0; saveState();
-      addLog("SHORT SL  -$"+Math.abs(p4).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2),"loss");
+      addLog("SHORT SL  -$"+Math.abs(p4).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2)+(ST.consecLoss>=C.MAX_CONSEC_LOSS?" | PAUSED ("+ST.consecLoss+" consec losses)":""),"loss");
       pushNtfy("TCBot LOSS -$"+Math.abs(p4).toFixed(2),"SHORT SL hit | Day:-$"+ST.dayLoss.toFixed(2),"x,rotating_light");
       playSound("loss"); doVibrate([300]);
     }
@@ -1589,18 +1603,29 @@ function renderStratTab(){
     ["ADX length","14"],["ADX minimum",">=20"],
     ["ATR length","14"],["Max body","0.70 x ATR"],
     ["Min body","0.15 x ATR"],["SL buffer","0.10 x ATR"],
-    ["R:R","2.0 : 1"],["Cooldown","5 bars"],
-    ["Max/session","4"],["Max open","2"],
-    ["Max risk/trade","$4.00 (dynamic lot)"]
+    ["R:R",C.RR.toFixed(1)+" : 1 (break-even WR: "+(100/(1+C.RR)).toFixed(0)+"%)"],["Cooldown","5 bars"],
+    ["Max/session","4"],["Max open","1"],
+    ["Max risk/trade","$"+C.MAX_RISK.toFixed(2)+" (dynamic lot)"],
+    ["Max consec losses",C.MAX_CONSEC_LOSS+" (then pauses til next session)"],
+    ["Min SL distance","$"+C.MIN_SL_DIST+" (fee guard)"]
   ].map(function(r){return dr(r[0],r[1]);}).join("");
 
+  var livePrice = price || 65632;
+  var feeAt200 = parseFloat(((C.MAX_RISK/200)*2*livePrice*C.COMMISSION_RATE).toFixed(2));
+  var feeAt300 = parseFloat(((C.MAX_RISK/300)*2*livePrice*C.COMMISSION_RATE).toFixed(2));
+  var netWin = parseFloat((C.MAX_RISK*C.RR - feeAt200).toFixed(2));
+  var netLoss = parseFloat((C.MAX_RISK + feeAt200).toFixed(2));
+  var evPer2 = parseFloat((netWin - netLoss).toFixed(2));
   E("spLot").innerHTML=
-    dr("Formula","Qty = $4 / |entry - SL|","#F0B90B")+
-    dr("SL $150 away","Qty=0.02667 BTC → loss=$4")+
-    dr("SL $80 away","Qty=0.05000 BTC → loss=$4")+
-    dr("At TP (2R)","Gain=$8 regardless of SL")+
-    dr("Commission","0.055% taker × 2 legs (entry+exit)","#F97316")+
-    dr("Net TP gain","$4 minus fees (auto-deducted)","#F97316");
+    dr("Formula","Qty = $"+C.MAX_RISK+" / |entry - SL|","#F0B90B")+
+    dr("SL $200 away","Qty="+(C.MAX_RISK/200).toFixed(5)+" BTC | fee ~$"+feeAt200,"#F0B90B")+
+    dr("SL $300 away","Qty="+(C.MAX_RISK/300).toFixed(5)+" BTC | fee ~$"+feeAt300,"#F0B90B")+
+    dr("Gross win (2R)","$"+(C.MAX_RISK*C.RR).toFixed(2)+" always","#00C47A")+
+    dr("Net win after fee","+"+"$"+netWin,"#00C47A")+
+    dr("Net loss after fee","-$"+netLoss,"#FF4040")+
+    dr("50% WR per 2 trades",(evPer2>=0?"+$":"-$")+Math.abs(evPer2)+" expected",evPer2>=0?"#00C47A":"#FF4040")+
+    dr("Commission","0.055% taker × 2 legs","#F97316")+
+    dr("Min SL guard","$"+C.MIN_SL_DIST+" ensures fee < $2/trade","#F97316");
 
   E("spKZ").innerHTML=
     dr("London","07:00 – 10:00 UTC")+
