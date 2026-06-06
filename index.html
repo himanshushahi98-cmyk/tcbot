@@ -558,7 +558,8 @@ function saveState() {
     localStorage.setItem("tcbot_open", JSON.stringify({
       inLong:ST.inLong, inShort:ST.inShort,
       openTp:ST.openTp, openSl:ST.openSl, openLot:ST.openLot,
-      openCount:ST.openCount, openTrades:ST.openTrades
+      openCount:ST.openCount, openTrades:ST.openTrades,
+      kzCnt:ST.kzCnt, lastKz:ST.lastKz
     }));
   } catch(e) {}
 }
@@ -587,6 +588,7 @@ function loadState() {
       ST.inLong=opt.inLong||false; ST.inShort=opt.inShort||false;
       ST.openTp=opt.openTp||0; ST.openSl=opt.openSl||0; ST.openLot=opt.openLot||0;
       ST.openCount=opt.openCount||0; ST.openTrades=opt.openTrades||[];
+      ST.kzCnt=opt.kzCnt||0; ST.lastKz=opt.lastKz||null;
     }
   } catch(e) {}
 }
@@ -1106,6 +1108,22 @@ function doReset() {
 // =============================================================
 //  CONNECT
 // =============================================================
+function startDataStreams(onDone) {
+  loadCandles(function(err){
+    if (!err) {
+      loadTicker();
+      if (tickTimer) clearInterval(tickTimer);
+      tickTimer=setInterval(loadTicker,15000);
+      if (liveTimer) clearInterval(liveTimer);
+      liveTimer=setInterval(liveCandle,5000);
+      addLog("Market data live — streams started","success");
+    } else {
+      addLog("Bybit data load failed: "+err,"error");
+    }
+    if (onDone) onDone(err);
+  });
+}
+
 function doConnClaude() {
   var key=E("ckIn").value.trim();
   if (key.length<40) { setConnMsg("ccMsg","error","Key too short — paste full sk-ant-... key"); return; }
@@ -1118,17 +1136,9 @@ function doConnClaude() {
   addLog("Claude key saved","success");
   btn.disabled=false; btn.textContent="RECONNECT";
   updateConnGrid();
-  loadCandles(function(err){
-    if (!err) {
-      setConnMsg("ccMsg","success","Connected — market data live");
-      loadTicker();
-      if (tickTimer) clearInterval(tickTimer);
-      tickTimer=setInterval(loadTicker,15000);
-      if (liveTimer) clearInterval(liveTimer);
-      liveTimer=setInterval(liveCandle,5000);
-    } else {
-      setConnMsg("ccMsg","error","Binance load failed: "+err);
-    }
+  startDataStreams(function(err){
+    if (!err) setConnMsg("ccMsg","success","Connected — market data live");
+    else setConnMsg("ccMsg","error","Bybit data load failed: "+err);
   });
 }
 
@@ -1268,9 +1278,8 @@ function liveCandle() {
     }
     // Real-time exit detection — fires within 5 s of Bybit hitting SL/TP
     if (ST.inLong || ST.inShort) {
-      var wasOpen = true;
       checkExits(forming.high, forming.low);
-      if (wasOpen && !ST.inLong && !ST.inShort) renderAll();
+      if (!ST.inLong && !ST.inShort) renderAll();
     }
     drawChart();
   });
@@ -1786,6 +1795,12 @@ window.onload=function(){
   updateConnGrid();
   E("botBtn").onclick=toggleBot;
   setInterval(function(){renderKZBar();drawChart();},60000);
+
+  // Auto-restart data streams if keys were restored from localStorage
+  if (connClaude && !candles.length) {
+    addLog("Keys loaded — auto-fetching market data…","info");
+    startDataStreams(null);
+  }
 
   // Live clock — ticks every second
   var clockEl = document.getElementById('liveClock');
