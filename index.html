@@ -413,7 +413,6 @@ var C = {
   RR:2.0,
   COOLDOWN:5, MAX_OPEN:1,
   MAX_RISK:4.0, MAX_DAY_LOSS:16.0,
-  MAX_CONSEC_LOSS:2,
   ASIA_END:7,
   COMMISSION_RATE:0.00055,  // Bybit taker 0.055% per side
 };
@@ -434,7 +433,6 @@ function freshState() {
     lastSigBar:-999, barIdx:0,
     kzCnt:0, lastKz:null,
     dayLoss:0, lastDay:null,
-    consecLoss:0,
     openTrades:[]
   };
 }
@@ -560,8 +558,7 @@ function saveState() {
     localStorage.setItem("tcbot_open", JSON.stringify({
       inLong:ST.inLong, inShort:ST.inShort,
       openTp:ST.openTp, openSl:ST.openSl, openLot:ST.openLot,
-      openCount:ST.openCount, openTrades:ST.openTrades,
-      consecLoss:ST.consecLoss
+      openCount:ST.openCount, openTrades:ST.openTrades
     }));
   } catch(e) {}
 }
@@ -590,7 +587,6 @@ function loadState() {
       ST.inLong=opt.inLong||false; ST.inShort=opt.inShort||false;
       ST.openTp=opt.openTp||0; ST.openSl=opt.openSl||0; ST.openLot=opt.openLot||0;
       ST.openCount=opt.openCount||0; ST.openTrades=opt.openTrades||[];
-      ST.consecLoss=opt.consecLoss||0;
     }
   } catch(e) {}
 }
@@ -715,11 +711,14 @@ function placeBybitOrder(side, qty, sl, tp) {
       var oid = d.result && d.result.orderId ? d.result.orderId.slice(-8) : "ok";
       addLog("BYBIT OK "+side+" | id:..."+oid, "success");
     } else {
-      addLog("BYBIT FAIL code:"+d.retCode+" — "+d.retMsg, "error");
+      var hint = d._hint ? " | "+d._hint : "";
+      addLog("BYBIT FAIL code:"+d.retCode+" — "+d.retMsg+hint, "error");
+      pushNtfy("TCBot ORDER FAIL","code:"+d.retCode+" "+d.retMsg+hint,"x,rotating_light");
     }
   })
   .catch(function(e){
     addLog("BYBIT net error: "+e.message, "error");
+    pushNtfy("TCBot NET ERROR",e.message,"x");
   });
 }
 
@@ -738,11 +737,11 @@ function sessName() {
 
 function dailyReset() {
   var today=new Date().toISOString().slice(0,10);
-  if (ST.lastDay!==today) { ST.dayLoss=0; ST.consecLoss=0; ST.lastDay=today; addLog("New day — loss counters reset","success"); saveState(); }
+  if (ST.lastDay!==today) { ST.dayLoss=0; ST.lastDay=today; addLog("New day — day loss reset","success"); saveState(); }
 }
 function sessReset() {
   var s=sessName();
-  if (s&&s!==ST.lastKz) { ST.kzCnt=0; ST.consecLoss=0; ST.lastKz=s; addLog("Session: "+s+" | consec loss reset","info"); }
+  if (s&&s!==ST.lastKz) { ST.kzCnt=0; ST.lastKz=s; addLog("Session: "+s,"info"); }
 }
 
 // =============================================================
@@ -768,8 +767,7 @@ function evalSignal(cs) {
   var cd=ST.barIdx-ST.lastSigBar, cdOk=cd>=C.COOLDOWN;
   var slotOk=ST.openCount<C.MAX_OPEN;
   var dayOk=ST.dayLoss<C.MAX_DAY_LOSS;
-  var consecOk=ST.consecLoss<C.MAX_CONSEC_LOSS;
-  var allOk=adxOk&&kzOk&&cdOk&&slotOk&&dayOk&&consecOk;
+  var allOk=adxOk&&kzOk&&cdOk&&slotOk&&dayOk;
   var slL=last.low,  tpL=last.close+(last.close-slL)*C.RR;
   var slS=last.high, tpS=last.close-(slS-last.close)*C.RR;
   var canBuy=bull&&inZone&&longC&&allOk&&!ST.inLong&&!ST.inShort;
@@ -788,8 +786,7 @@ function evalSignal(cs) {
       "Session":      {ok:kzOk,          v:kzOk?sessName():"ASIA (blocked)"},
       "Cooldown":     {ok:cdOk,          v:Math.min(cd,C.COOLDOWN)+"/"+C.COOLDOWN},
       "Open slots":   {ok:slotOk,        v:ST.openCount+"/"+C.MAX_OPEN},
-      "Day loss":     {ok:dayOk,         v:"$"+ST.dayLoss.toFixed(2)+"/$"+C.MAX_DAY_LOSS},
-      "Consec losses":{ok:consecOk,      v:ST.consecLoss+"/"+C.MAX_CONSEC_LOSS}
+      "Day loss":     {ok:dayOk,         v:"$"+ST.dayLoss.toFixed(2)+"/$"+C.MAX_DAY_LOSS}
     }
   };
 }
@@ -804,7 +801,6 @@ function checkExits(hi, lo) {
     if (hi>=ST.openTp) {
       var p=tradePnl(ST.openLot,ent,ST.openTp,"LONG");
       ST.wins++; ST.pnl=parseFloat((ST.pnl+p).toFixed(2));
-      ST.consecLoss=0;
       ST.openCount=Math.max(0,ST.openCount-1); ST.inLong=false;
       trades.unshift({side:"LONG",result:"TP",pnl:p,qty:ST.openLot,time:ts()});
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="LONG";});
@@ -816,12 +812,11 @@ function checkExits(hi, lo) {
       var p2=tradePnl(ST.openLot,ent,ST.openSl,"LONG");
       ST.losses++; ST.pnl=parseFloat((ST.pnl+p2).toFixed(2));
       ST.dayLoss=parseFloat((ST.dayLoss+Math.abs(p2)).toFixed(2));
-      ST.consecLoss++;
       ST.openCount=Math.max(0,ST.openCount-1); ST.inLong=false;
       trades.unshift({side:"LONG",result:"SL",pnl:p2,qty:ST.openLot,time:ts()});
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="LONG";});
       ST.openLot=0; saveState();
-      addLog("LONG SL  -$"+Math.abs(p2).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2)+(ST.consecLoss>=C.MAX_CONSEC_LOSS?" | PAUSED ("+ST.consecLoss+" consec losses)":""),"loss");
+      addLog("LONG SL  -$"+Math.abs(p2).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2),"loss");
       pushNtfy("TCBot LOSS -$"+Math.abs(p2).toFixed(2),"LONG SL hit | Day:-$"+ST.dayLoss.toFixed(2),"x,rotating_light");
       playSound("loss"); doVibrate([300]);
     }
@@ -832,7 +827,6 @@ function checkExits(hi, lo) {
     if (lo<=ST.openTp) {
       var p3=tradePnl(ST.openLot,ent2,ST.openTp,"SHORT");
       ST.wins++; ST.pnl=parseFloat((ST.pnl+p3).toFixed(2));
-      ST.consecLoss=0;
       ST.openCount=Math.max(0,ST.openCount-1); ST.inShort=false;
       trades.unshift({side:"SHORT",result:"TP",pnl:p3,qty:ST.openLot,time:ts()});
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="SHORT";});
@@ -844,12 +838,11 @@ function checkExits(hi, lo) {
       var p4=tradePnl(ST.openLot,ent2,ST.openSl,"SHORT");
       ST.losses++; ST.pnl=parseFloat((ST.pnl+p4).toFixed(2));
       ST.dayLoss=parseFloat((ST.dayLoss+Math.abs(p4)).toFixed(2));
-      ST.consecLoss++;
       ST.openCount=Math.max(0,ST.openCount-1); ST.inShort=false;
       trades.unshift({side:"SHORT",result:"SL",pnl:p4,qty:ST.openLot,time:ts()});
       ST.openTrades=ST.openTrades.filter(function(t){return t.side!=="SHORT";});
       ST.openLot=0; saveState();
-      addLog("SHORT SL  -$"+Math.abs(p4).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2)+(ST.consecLoss>=C.MAX_CONSEC_LOSS?" | PAUSED ("+ST.consecLoss+" consec losses)":""),"loss");
+      addLog("SHORT SL  -$"+Math.abs(p4).toFixed(2)+"  Day:-$"+ST.dayLoss.toFixed(2),"loss");
       pushNtfy("TCBot LOSS -$"+Math.abs(p4).toFixed(2),"SHORT SL hit | Day:-$"+ST.dayLoss.toFixed(2),"x,rotating_light");
       playSound("loss"); doVibrate([300]);
     }
@@ -1601,7 +1594,6 @@ function renderStratTab(){
     ["R:R",C.RR.toFixed(1)+" : 1"],["Cooldown","5 bars"],
     ["Max open","1"],
     ["Max risk/trade","$"+C.MAX_RISK.toFixed(2)+" (dynamic lot)"],
-    ["Max consec losses",C.MAX_CONSEC_LOSS+" (then pauses)"],
     ["Asia session","Blocked 00:00–06:59 UTC"]
   ].map(function(r){return dr(r[0],r[1]);}).join("");
 
