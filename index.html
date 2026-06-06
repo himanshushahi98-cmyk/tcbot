@@ -735,9 +735,23 @@ function sessName() {
   return "ACTIVE";
 }
 
+// Trading day resets at Asia close (07:00 UTC). Before 07:00 we are still
+// in the previous session block, so use yesterday's date as the key.
+function getTradingDay() {
+  var d=new Date();
+  if (d.getUTCHours()<C.ASIA_END) {
+    d.setUTCDate(d.getUTCDate()-1);
+  }
+  return d.toISOString().slice(0,10);
+}
+
 function dailyReset() {
-  var today=new Date().toISOString().slice(0,10);
-  if (ST.lastDay!==today) { ST.dayLoss=0; ST.lastDay=today; addLog("New day — day loss reset","success"); saveState(); }
+  var td=getTradingDay();
+  if (ST.lastDay!==td) {
+    ST.dayLoss=0; ST.lastDay=td;
+    addLog("New trading day — Asia closed, day loss reset ("+td+")","success");
+    saveState();
+  }
 }
 function sessReset() {
   var s=sessName();
