@@ -681,16 +681,17 @@ function commissionCost(qty, entry, exit) {
 // =============================================================
 //  BYBIT LIVE ORDER
 // =============================================================
-function placeBybitOrder(side, qty, sl, tp) {
+// cb(ok, orderId) — called after Bybit responds. Trade is recorded ONLY on ok=true.
+function placeBybitOrder(side, qty, sl, tp, cb) {
   if (!connBybit || !KEY_BK || !KEY_BS) {
-    addLog("Bybit SIM (no keys) — "+side+" skipped", "info");
+    addLog("Bybit not connected — "+side+" NOT placed (mainnet-only mode)","error");
+    if (cb) cb(false, null);
     return;
   }
-  // lotSize() already returns Bybit-stepped qty (0.001 BTC precision)
   var safeQty = qty;
   var safeSl = parseFloat(sl.toFixed(1));
   var safeTp = parseFloat(tp.toFixed(1));
-  addLog("Bybit placing "+side+" | qty:"+safeQty+" SL:"+safeSl+" TP:"+safeTp+" ["+BYBIT_POS_MODE+"]","info");
+  addLog("Sending "+side+" to Bybit | qty:"+safeQty+" SL:"+safeSl+" TP:"+safeTp+" ["+BYBIT_POS_MODE+"]","info");
   fetch("/api/bybit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -709,16 +710,19 @@ function placeBybitOrder(side, qty, sl, tp) {
   .then(function(d){
     if (d.retCode === 0) {
       var oid = d.result && d.result.orderId ? d.result.orderId.slice(-8) : "ok";
-      addLog("BYBIT OK "+side+" | id:..."+oid, "success");
+      addLog("BYBIT CONFIRMED "+side+" | id:..."+oid, "success");
+      if (cb) cb(true, oid);
     } else {
       var hint = d._hint ? " | "+d._hint : "";
-      addLog("BYBIT FAIL code:"+d.retCode+" — "+d.retMsg+hint, "error");
+      addLog("BYBIT REJECTED code:"+d.retCode+" — "+d.retMsg+hint, "error");
       pushNtfy("TCBot ORDER FAIL","code:"+d.retCode+" "+d.retMsg+hint,"x,rotating_light");
+      if (cb) cb(false, null);
     }
   })
   .catch(function(e){
     addLog("BYBIT net error: "+e.message, "error");
     pushNtfy("TCBot NET ERROR",e.message,"x");
+    if (cb) cb(false, null);
   });
 }
 
@@ -1022,29 +1026,38 @@ function tick() {
     if (SIG&&SIG.signal) {
       if (SIG.signal==="BUY"&&!ST.inLong&&!ST.inShort) {
         var lot=SIG.lotL;
-        // Round to 1dp — must match exactly what Bybit receives so exit levels align
         var rSlL=parseFloat(SIG.slL.toFixed(1)), rTpL=parseFloat(SIG.tpL.toFixed(1));
-        ST.inLong=true; ST.openTp=rTpL; ST.openSl=rSlL; ST.openLot=lot;
-        ST.openCount++; ST.total++; ST.lastSigBar=ST.barIdx; ST.kzCnt++;
-        ST.openTrades.push({side:"LONG",entry:SIG.price,sl:rSlL,tp:rTpL,qty:lot,time:ts()});
-        saveState();
-        var estComm=commissionCost(lot,SIG.price,rTpL);
-        addLog("BUY $"+SIG.price.toFixed(0)+" SL $"+rSlL.toFixed(1)+" TP $"+rTpL.toFixed(1)+" | "+lot+" BTC | Risk $"+C.MAX_RISK+" | fee~$"+estComm,"buy");
-        pushNtfy("TCBot BUY $"+SIG.price.toFixed(0),"SL:$"+rSlL.toFixed(0)+" TP:$"+rTpL.toFixed(0)+" lot:"+lot+" BTC","chart_with_upwards_trend,green_circle");
-        playSound("entry"); doVibrate([60]);
-        placeBybitOrder("BUY", lot, rSlL, rTpL);
+        var entryP=SIG.price;
+        ST.lastSigBar=ST.barIdx; // block re-signal while Bybit API responds
+        addLog("BUY signal $"+entryP.toFixed(0)+" SL:$"+rSlL+" TP:$"+rTpL+" | "+lot+" BTC — awaiting Bybit...","buy");
+        placeBybitOrder("BUY", lot, rSlL, rTpL, function(ok, oid) {
+          if (!ok) return; // rejected — do NOT record anything
+          ST.inLong=true; ST.openTp=rTpL; ST.openSl=rSlL; ST.openLot=lot;
+          ST.openCount++; ST.total++; ST.kzCnt++;
+          ST.openTrades.push({side:"LONG",entry:entryP,sl:rSlL,tp:rTpL,qty:lot,time:ts()});
+          saveState();
+          var estComm=commissionCost(lot,entryP,rTpL);
+          addLog("LONG OPEN confirmed | id:..."+oid+" | fee~$"+estComm,"success");
+          pushNtfy("TCBot BUY $"+entryP.toFixed(0),"SL:$"+rSlL.toFixed(0)+" TP:$"+rTpL.toFixed(0)+" lot:"+lot+" BTC","chart_with_upwards_trend,green_circle");
+          playSound("entry"); doVibrate([60]); renderAll();
+        });
       } else if (SIG.signal==="SELL"&&!ST.inLong&&!ST.inShort) {
         var lot2=SIG.lotS;
         var rSlS=parseFloat(SIG.slS.toFixed(1)), rTpS=parseFloat(SIG.tpS.toFixed(1));
-        ST.inShort=true; ST.openTp=rTpS; ST.openSl=rSlS; ST.openLot=lot2;
-        ST.openCount++; ST.total++; ST.lastSigBar=ST.barIdx; ST.kzCnt++;
-        ST.openTrades.push({side:"SHORT",entry:SIG.price,sl:rSlS,tp:rTpS,qty:lot2,time:ts()});
-        saveState();
-        var estComm2=commissionCost(lot2,SIG.price,rTpS);
-        addLog("SELL $"+SIG.price.toFixed(0)+" SL $"+rSlS.toFixed(1)+" TP $"+rTpS.toFixed(1)+" | "+lot2+" BTC | Risk $"+C.MAX_RISK+" | fee~$"+estComm2,"sell");
-        pushNtfy("TCBot SELL $"+SIG.price.toFixed(0),"SL:$"+rSlS.toFixed(0)+" TP:$"+rTpS.toFixed(0)+" lot:"+lot2+" BTC","chart_with_downwards_trend,red_circle");
-        playSound("entry"); doVibrate([60]);
-        placeBybitOrder("SELL", lot2, rSlS, rTpS);
+        var entryP2=SIG.price;
+        ST.lastSigBar=ST.barIdx;
+        addLog("SELL signal $"+entryP2.toFixed(0)+" SL:$"+rSlS+" TP:$"+rTpS+" | "+lot2+" BTC — awaiting Bybit...","sell");
+        placeBybitOrder("SELL", lot2, rSlS, rTpS, function(ok, oid) {
+          if (!ok) return;
+          ST.inShort=true; ST.openTp=rTpS; ST.openSl=rSlS; ST.openLot=lot2;
+          ST.openCount++; ST.total++; ST.kzCnt++;
+          ST.openTrades.push({side:"SHORT",entry:entryP2,sl:rSlS,tp:rTpS,qty:lot2,time:ts()});
+          saveState();
+          var estComm2=commissionCost(lot2,entryP2,rTpS);
+          addLog("SHORT OPEN confirmed | id:..."+oid+" | fee~$"+estComm2,"success");
+          pushNtfy("TCBot SELL $"+entryP2.toFixed(0),"SL:$"+rSlS.toFixed(0)+" TP:$"+rTpS.toFixed(0)+" lot:"+lot2+" BTC","chart_with_downwards_trend,red_circle");
+          playSound("entry"); doVibrate([60]); renderAll();
+        });
       }
     }
     var tot=ST.wins+ST.losses, wr=tot>0?((ST.wins/tot)*100).toFixed(1):"0.0";
