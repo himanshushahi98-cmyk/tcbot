@@ -1062,8 +1062,17 @@ function tick() {
         });
       }
     }
-    var tot=ST.wins+ST.losses, wr=tot>0?((ST.wins/tot)*100).toFixed(1):"0.0";
-    addLog("Bar "+ST.barIdx+" W:"+ST.wins+" L:"+ST.losses+" WR:"+wr+"% PnL:$"+ST.pnl.toFixed(2),"info");
+    // Per-bar diagnostic — shows first failing filter so user sees why no signal
+    if (SIG && !SIG.signal) {
+      var f=SIG.filters, blk="";
+      var keys=Object.keys(f);
+      for (var ki=0;ki<keys.length;ki++){
+        if (!f[keys[ki]].ok){ blk=keys[ki]+": "+f[keys[ki]].v; break; }
+      }
+      addLog("Bar "+ST.barIdx+" NO SIGNAL — "+(blk||"all filters met but no candle")+" | EMA9:"+SIG.e9.toFixed(0)+" EMA15:"+SIG.e15.toFixed(0)+" ADX:"+SIG.adxV.toFixed(1),"info");
+    } else if (!SIG) {
+      addLog("Bar "+ST.barIdx+" — not enough history","info");
+    }
     drawChart(); renderAll();
   });
 }
@@ -1729,7 +1738,7 @@ function renderHistTab(){
 function updateConnGrid(){
   E("connGrid").innerHTML=[
     {l:"Claude API",on:connClaude,v:connClaude?"Connected":"Not connected"},
-    {l:"Bybit API", on:connBybit, v:connBybit?"Keys saved":"Not set"},
+    {l:"Bybit API", on:connBybit, v:connBybit?"Keys saved — run TEST to verify":"Not set"},
     {l:"Market data",on:candles.length>0,v:candles.length?"Live ("+candles.length+" bars)":"Offline"}
   ].map(function(item){
     var c=item.on?"#00C47A":"var(--b2)", glow=item.on?"0 0 5px #00C47A":"none";
