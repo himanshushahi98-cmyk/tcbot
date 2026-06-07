@@ -585,9 +585,11 @@ function loadState() {
     var op=localStorage.getItem("tcbot_open");
     if (op) {
       var opt=JSON.parse(op);
-      ST.inLong=opt.inLong||false; ST.inShort=opt.inShort||false;
-      ST.openTp=opt.openTp||0; ST.openSl=opt.openSl||0; ST.openLot=opt.openLot||0;
-      ST.openCount=opt.openCount||0; ST.openTrades=opt.openTrades||[];
+      var trades_=opt.openTrades||[];
+      var hasPos=(opt.inLong||opt.inShort)&&trades_.length>0;
+      ST.inLong=hasPos?opt.inLong:false; ST.inShort=hasPos?opt.inShort:false;
+      ST.openTp=hasPos?opt.openTp:0; ST.openSl=hasPos?opt.openSl:0; ST.openLot=hasPos?opt.openLot:0;
+      ST.openCount=hasPos?opt.openCount:0; ST.openTrades=hasPos?trades_:[];
       ST.kzCnt=opt.kzCnt||0; ST.lastKz=opt.lastKz||null;
     }
   } catch(e) {}
@@ -778,8 +780,7 @@ function evalSignal(cs) {
   var bodyRatio=body/candleRange;
   var zTop=Math.max(e9,e15), zBot=Math.min(e9,e15);
   var bull=e9>e15, bear=e9<e15;
-  var bLow=Math.min(last.open,last.close), bHigh=Math.max(last.open,last.close);
-  var inZone=bLow<=zTop&&bHigh>=zBot;
+  var inZone=last.low<=zTop&&last.high>=zBot;
   var bodyOk=bodyRatio>=0.60;
   var longC=last.close>last.open&&bodyOk&&last.close>mid&&last.close>=zBot;
   var shortC=last.close<last.open&&bodyOk&&last.close<mid&&last.close<=zTop;
